@@ -9,6 +9,8 @@
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>MarkdownDocument</string>
 			<key>CFBundleTypeName</key>
 			<string>Markdown Document</string>
 			<key>CFBundleTypeRole</key>
