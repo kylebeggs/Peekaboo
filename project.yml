@@ -1,0 +1,86 @@
+name: Peekaboo
+options:
+  bundleIdPrefix: com.kylebeggs
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+
+packages:
+  MarkdownRenderer:
+    path: Packages/MarkdownRenderer
+
+settings:
+  base:
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "Apple Development"
+    DEVELOPMENT_TEAM: USJJNJB67B
+    SWIFT_VERSION: "5.9"
+
+targets:
+  Peekaboo:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Sources
+      - path: App/Resources
+        buildPhase: resources
+    dependencies:
+      - package: MarkdownRenderer
+      - target: PeekabooQuickLook
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kylebeggs.Peekaboo
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Peekaboo
+        LSApplicationCategoryType: public.app-category.productivity
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Markdown Document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - net.daringfireball.markdown
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeConformsTo:
+              - public.plain-text
+            UTTypeDescription: Markdown Document
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - md
+                - markdown
+                - mdown
+                - mkd
+                - mkdn
+              public.mime-type:
+                - text/markdown
+
+  PeekabooQuickLook:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: QuickLook/Sources
+    dependencies:
+      - package: MarkdownRenderer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kylebeggs.Peekaboo.QuickLook
+    entitlements:
+      path: QuickLook/PeekabooQuickLook.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true
+    info:
+      path: QuickLook/Info.plist
+      properties:
+        CFBundleDisplayName: Peekaboo Quick Look
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
+          NSExtensionAttributes:
+            QLSupportedContentTypes:
+              - net.daringfireball.markdown
+              - public.markdown
+            QLIsDataBasedPreview: true
