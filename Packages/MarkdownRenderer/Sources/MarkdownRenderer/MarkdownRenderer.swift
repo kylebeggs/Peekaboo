@@ -4,6 +4,7 @@ public struct RenderOptions {
     public var baseURL: URL?
     public var title: String = "Markdown"
     public var allowMathJaxFallback: Bool = true
+    public var pageZoom: Double = 1.0
 
     public init() {}
 }
@@ -85,7 +86,11 @@ public struct MarkdownRenderer {
         if let baseURL = options.baseURL {
             body = ImageInliner.inline(html: body, baseURL: baseURL)
         }
-        return RenderedDocument(bodyHTML: body, css: HTMLTemplate.css(includeMath: hasMath), title: options.title)
+        var css = HTMLTemplate.css(includeMath: hasMath)
+        if options.pageZoom != 1 {
+            css += "\nbody { zoom: \(options.pageZoom); }"
+        }
+        return RenderedDocument(bodyHTML: body, css: css, title: options.title)
     }
 
     public func renderHTML(markdown: String, options: RenderOptions = RenderOptions()) throws -> String {

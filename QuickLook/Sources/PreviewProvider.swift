@@ -10,6 +10,7 @@ final class PreviewProvider: QLPreviewProvider, QLPreviewingController {
         var options = RenderOptions()
         options.baseURL = request.fileURL.deletingLastPathComponent()
         options.title = request.fileURL.lastPathComponent
+        options.pageZoom = 0.9
         let html = try MarkdownRenderer().renderHTML(markdown: markdown, options: options)
 
         let reply = QLPreviewReply(

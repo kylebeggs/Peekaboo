@@ -224,4 +224,16 @@ final class MarkdownRendererTests: XCTestCase {
         let document = try MarkdownRenderer().renderDocument(markdown: "plain text only")
         XCTAssertFalse(document.css.contains("KaTeX_AMS"), "KaTeX CSS should be omitted without math")
     }
+
+    func testPageZoomEmitsBodyZoomRule() throws {
+        var options = RenderOptions()
+        options.pageZoom = 0.9
+        let document = try MarkdownRenderer().renderDocument(markdown: "# Hi", options: options)
+        XCTAssertTrue(document.css.contains("body { zoom: 0.9; }"), "expected zoom rule, got:\n\(document.css.suffix(200))")
+    }
+
+    func testDefaultPageZoomEmitsNoZoomRule() throws {
+        let document = try MarkdownRenderer().renderDocument(markdown: "# Hi")
+        XCTAssertFalse(document.css.contains("body { zoom:"), "default options should not emit a zoom rule")
+    }
 }
