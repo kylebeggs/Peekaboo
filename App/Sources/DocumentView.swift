@@ -8,6 +8,7 @@ struct DocumentView: View {
     @State private var document: RenderedDocument?
     @State private var renderError: String?
     @State private var watcher: FileWatcher?
+    @AppStorage("pageZoom") private var pageZoom = 1.0
 
     var body: some View {
         Group {
@@ -25,6 +26,20 @@ struct DocumentView: View {
             }
         }
         .frame(minWidth: 480, minHeight: 320)
+        .toolbar {
+            Button {
+                pageZoom = Zoom.zoomedOut(pageZoom)
+            } label: {
+                Label("Zoom Out", systemImage: "minus.magnifyingglass")
+            }
+            .help("Zoom Out")
+            Button {
+                pageZoom = Zoom.zoomedIn(pageZoom)
+            } label: {
+                Label("Zoom In", systemImage: "plus.magnifyingglass")
+            }
+            .help("Zoom In")
+        }
         .task {
             await render(markdown: initialText)
             startWatching()

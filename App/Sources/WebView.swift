@@ -4,6 +4,7 @@ import MarkdownRenderer
 
 struct WebView: NSViewRepresentable {
     let document: RenderedDocument?
+    @AppStorage("pageZoom") private var pageZoom = 1.0
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -17,10 +18,12 @@ struct WebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
+        webView.pageZoom = pageZoom
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        webView.pageZoom = pageZoom
         guard let document else { return }
         context.coordinator.show(document, in: webView)
     }
