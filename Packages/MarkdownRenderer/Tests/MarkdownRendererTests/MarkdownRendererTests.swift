@@ -56,6 +56,14 @@ final class MarkdownRendererTests: XCTestCase {
         XCTAssertTrue(html.contains("katex-display"), "expected display KaTeX output, got:\n\(html)")
     }
 
+    func testKatexCSSOverridesVlistStrutFontSize() throws {
+        let doc = try MarkdownRenderer().renderDocument(markdown: "$$x$$")
+        XCTAssertTrue(
+            doc.css.contains(".katex .vlist-s { font-size: 2px; }"),
+            "missing .vlist-s override: WebKit zoom < ~0.9 clips display math without it"
+        )
+    }
+
     func testMathFence() throws {
         let html = try render("```math\n\\sum_{i=1}^n i\n```")
         XCTAssertTrue(html.contains("katex-display"), html)

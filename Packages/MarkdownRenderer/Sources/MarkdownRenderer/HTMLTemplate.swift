@@ -44,6 +44,11 @@ enum HTMLTemplate {
                 with: "url(data:font/woff2;base64,\(data.base64EncodedString())) format(\"woff2\")"
             )
         }
+        // WebKit zoom factors below ~0.9 (zoom property or WKWebView.pageZoom)
+        // collapse the baseline of KaTeX's 1px .vlist-s strut cell, which
+        // bottom-aligns every vlist and clips display math. 2px stays ≥ 1px down
+        // to the app's 0.5 zoom floor; zoom-1 output is pixel-identical.
+        css += "\n.katex .vlist-s { font-size: 2px; }"
         return css
     }()
 
