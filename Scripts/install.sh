@@ -16,6 +16,15 @@ pluginkit -a "$DEST/Contents/PlugIns/PeekabooQuickLook.appex" 2>/dev/null || tru
 qlmanage -r >/dev/null 2>&1 || true
 qlmanage -r cache >/dev/null 2>&1 || true
 
+CLI_SRC="$(cd "$(dirname "$0")" && pwd)/peekaboo"
+BIN_DIR="/opt/homebrew/bin"
+if [[ -w "$BIN_DIR" ]]; then
+  install -m 755 "$CLI_SRC" "$BIN_DIR/peekaboo"
+  echo "Installed CLI: $BIN_DIR/peekaboo"
+else
+  echo "Skipped CLI install: $BIN_DIR not writable" >&2
+fi
+
 echo "Installed $DEST"
 echo "Extension status:"
 pluginkit -m -i com.kylebeggs.Peekaboo.QuickLook || echo "  (not yet registered — launch the app once)"

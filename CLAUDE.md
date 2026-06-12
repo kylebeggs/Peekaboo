@@ -10,8 +10,10 @@ Peekaboo is a macOS markdown viewer app with a Quick Look extension. Both render
 
 ```bash
 ./Scripts/build.sh      # xcodegen generate + Release build (DerivedData in /tmp/peekaboo-dd)
-./Scripts/install.sh    # copy built app to /Applications, re-register QL extension, flush QL cache
+./Scripts/install.sh    # copy built app to /Applications, re-register QL extension, flush QL cache, install `peekaboo` CLI
 ```
+
+`Scripts/peekaboo` is a thin `open -a Peekaboo` wrapper; `install.sh` copies it to `/opt/homebrew/bin/peekaboo` so `peekaboo file.md` opens files in the app.
 
 Tests live in the Swift package, not an Xcode test target:
 

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Opens files in the Peekaboo markdown viewer.
+case "${1:-}" in
+  -h|--help)
+    echo "usage: peekaboo [file.md ...]"
+    exit 0
+    ;;
+esac
+exec open -a Peekaboo "$@"
