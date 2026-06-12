@@ -2,11 +2,17 @@ import Foundation
 import cmark_gfm
 
 /// Transforms GitHub alert (`> [!NOTE]`) and Obsidian callout (`> [!info] Title`)
-/// blockquotes into styled divs. The blockquote is replaced by raw-HTML sibling
-/// blocks bracketing its children, so no custom cmark node types are needed.
+/// blockquotes into styled divs — or, for foldable callouts (`[!info]-`/`[!info]+`),
+/// native `<details>`/`<summary>` elements. The blockquote is replaced by raw-HTML
+/// sibling blocks bracketing its children, so no custom cmark node types are needed.
 /// Obsidian-only kinds reuse the closest GitHub alert style class; an optional
 /// title after the marker replaces the default kind title.
 enum AlertsPass {
+    /// Obsidian fold marker after the kind: `[!info]-` collapsed, `[!info]+` expanded.
+    private enum Fold {
+        case none, closed, open
+    }
+
     private static let styles = ["note", "tip", "important", "warning", "caution"]
 
     /// kind → (existing style class, default title shown when no custom title).
@@ -60,7 +66,7 @@ enum AlertsPass {
               let cLiteral = cmark_node_get_literal(marker) else { return }
 
         let literal = String(cString: cLiteral)
-        guard let (kind, markerTitle) = parseMarker(literal), let mapping = kinds[kind] else { return }
+        guard let (kind, fold, markerTitle) = parseMarker(literal), let mapping = kinds[kind] else { return }
 
         // Title: the marker-line remainder plus any inline nodes up to the first break.
         var titleNodes: [CMarkNode] = []
@@ -100,9 +106,19 @@ enum AlertsPass {
         let icon = icons[mapping.style] ?? ""
         // The inner span keeps the title a single flex item; otherwise the flex
         // gap separates every text run and inline element in a rich title.
-        guard let opener = CMarkPipeline.htmlBlock(
-                  "<div class=\"markdown-alert markdown-alert-\(mapping.style)\"><p class=\"markdown-alert-title\">\(icon)<span>\(title)</span></p>\n"),
-              let closer = CMarkPipeline.htmlBlock("</div>\n") else { return }
+        let titleHTML = "\(icon)<span>\(title)</span>"
+        let openerHTML: String
+        let closerHTML: String
+        if fold == .none {
+            openerHTML = "<div class=\"markdown-alert markdown-alert-\(mapping.style)\"><p class=\"markdown-alert-title\">\(titleHTML)</p>\n"
+            closerHTML = "</div>\n"
+        } else {
+            let openAttribute = fold == .open ? " open" : ""
+            openerHTML = "<details class=\"markdown-alert markdown-alert-\(mapping.style)\"\(openAttribute)><summary class=\"markdown-alert-title\">\(titleHTML)</summary>\n"
+            closerHTML = "</details>\n"
+        }
+        guard let opener = CMarkPipeline.htmlBlock(openerHTML),
+              let closer = CMarkPipeline.htmlBlock(closerHTML) else { return }
 
         cmark_node_insert_before(blockquote, opener)
         while let child = cmark_node_first_child(blockquote) {
@@ -142,7 +158,7 @@ enum AlertsPass {
 
     /// Parses `[!kind]`, an optional Obsidian fold marker (`-`/`+`), and the
     /// remainder of the marker line (the start of a custom title).
-    private static func parseMarker(_ literal: String) -> (kind: String, title: String)? {
+    private static func parseMarker(_ literal: String) -> (kind: String, fold: Fold, title: String)? {
         // Trailing whitespace is preserved: it may separate the title head from a
         // following inline node (e.g. `[!info] See **this**`).
         let content = Substring(literal).drop(while: { $0 == " " || $0 == "\t" })
@@ -150,7 +166,14 @@ enum AlertsPass {
         let kind = String(content[content.index(content.startIndex, offsetBy: 2)..<close]).lowercased()
         guard !kind.isEmpty else { return nil }
         var rest = content[content.index(after: close)...]
-        if rest.first == "-" || rest.first == "+" { rest = rest.dropFirst() }
-        return (kind, String(rest.drop(while: { $0 == " " || $0 == "\t" })))
+        var fold = Fold.none
+        if rest.first == "-" {
+            fold = .closed
+            rest = rest.dropFirst()
+        } else if rest.first == "+" {
+            fold = .open
+            rest = rest.dropFirst()
+        }
+        return (kind, fold, String(rest.drop(while: { $0 == " " || $0 == "\t" })))
     }
 }

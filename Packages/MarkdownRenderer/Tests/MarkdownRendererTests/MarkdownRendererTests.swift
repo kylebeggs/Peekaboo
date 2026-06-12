@@ -205,8 +205,40 @@ final class MarkdownRendererTests: XCTestCase {
 
     func testFoldedCalloutMarker() throws {
         let html = try render("> [!info]- Folded Title\n> Body.")
-        XCTAssertTrue(html.contains("markdown-alert-note"), html)
+        XCTAssertTrue(html.contains("<details class=\"markdown-alert markdown-alert-note\">"),
+                      "folded callout should be a collapsed details element, got:\n\(html)")
+        XCTAssertTrue(html.contains("<summary class=\"markdown-alert-title\">"), html)
+        XCTAssertTrue(html.contains("</details>"), html)
         XCTAssertTrue(html.contains("Folded Title"), html)
+    }
+
+    func testFoldedOpenCallout() throws {
+        let html = try render("> [!tip]+ Open Title\n> Body.")
+        XCTAssertTrue(html.contains("<details class=\"markdown-alert markdown-alert-tip\" open>"),
+                      "[!tip]+ should be an expanded details element, got:\n\(html)")
+        XCTAssertTrue(html.contains("Open Title"), html)
+    }
+
+    func testBareCalloutStaysDiv() throws {
+        let html = try render("> [!info] Plain Title\n> Body.")
+        XCTAssertTrue(html.contains("<div class=\"markdown-alert markdown-alert-note\">"), html)
+        XCTAssertFalse(html.contains("<details"), "bare callout must not be collapsible, got:\n\(html)")
+    }
+
+    func testFoldedCalloutTitleMath() throws {
+        let html = try render("> [!question]- What is $df$?\n> Body.")
+        XCTAssertTrue(html.contains("<details"), html)
+        XCTAssertTrue(html.contains("class=\"katex\""), "math in a folded title should render, got:\n\(html)")
+    }
+
+    func testNestedFoldedCallout() throws {
+        let html = try render("> [!note]- Outer\n> Outer body.\n> > [!tip] Inner\n> > Inner body.")
+        XCTAssertTrue(html.contains("<details class=\"markdown-alert markdown-alert-note\">"), html)
+        XCTAssertTrue(html.contains("<div class=\"markdown-alert markdown-alert-tip\">"), html)
+        let inner = html.range(of: "markdown-alert-tip")
+        let outerClose = html.range(of: "</details>")
+        XCTAssertTrue(inner!.upperBound < outerClose!.lowerBound,
+                      "inner callout should nest inside the folded outer, got:\n\(html)")
     }
 
     func testNestedCallouts() throws {

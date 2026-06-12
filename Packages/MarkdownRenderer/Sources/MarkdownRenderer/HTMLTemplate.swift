@@ -75,6 +75,15 @@ enum HTMLTemplate {
     .markdown-alert > :last-child { margin-bottom: 0; }
     .markdown-alert .markdown-alert-title { display: flex; align-items: center; gap: 8px; font-weight: 500; line-height: 1; margin-bottom: 8px; }
     .markdown-alert .markdown-alert-title svg { fill: currentColor; }
+    details.markdown-alert > summary.markdown-alert-title { cursor: pointer; list-style: none; }
+    details.markdown-alert > summary.markdown-alert-title::-webkit-details-marker { display: none; }
+    details.markdown-alert > summary.markdown-alert-title::after {
+      content: ""; flex: none; width: 0.45em; height: 0.45em;
+      border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg); transition: transform 0.15s ease;
+    }
+    details.markdown-alert[open] > summary.markdown-alert-title::after { transform: rotate(45deg); }
+    details.markdown-alert:not([open]) > summary.markdown-alert-title { margin-bottom: 0; }
     .markdown-alert-note { border-left-color: #0969da; }
     .markdown-alert-note .markdown-alert-title { color: #0969da; }
     .markdown-alert-tip { border-left-color: #1a7f37; }
