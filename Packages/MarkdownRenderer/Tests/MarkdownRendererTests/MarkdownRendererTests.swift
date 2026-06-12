@@ -126,6 +126,19 @@ final class MarkdownRendererTests: XCTestCase {
         XCTAssertTrue(html.contains("and that is all"), html)
     }
 
+    func testGluedDisplayMathCloser() throws {
+        // Obsidian lets a $$ block close at the start of a text line; the prose
+        // after the delimiter must not be swallowed into the TeX or mispair the
+        // next block.
+        let html = try render("$$\nC^2 = 1\n$$where $x$ is small, then\n$$\n\\beta = 2\n$$")
+        XCTAssertTrue(html.contains("katex-display"), "expected display math, got:\n\(html)")
+        XCTAssertTrue(html.contains("is small, then"), "glued prose should survive as text, got:\n\(html)")
+        XCTAssertFalse(html.contains("$$"), html)
+        XCTAssertFalse(html.contains("math-error"), html)
+        XCTAssertEqual(html.components(separatedBy: "katex-display").count - 1, 2,
+                       "both blocks should render as display math, got:\n\(html)")
+    }
+
     // MARK: - Alerts
 
     func testNoteAlert() throws {

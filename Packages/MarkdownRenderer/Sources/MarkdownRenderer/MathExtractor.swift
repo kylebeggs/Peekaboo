@@ -80,6 +80,9 @@ enum MathExtractor {
                 let opener = String(trimmed.dropFirst(2))
                 if let block = collectBlock(lines: lines, openerRemainder: opener, from: index, insideQuote: insideQuote) {
                     appendDisplayToken(registry.register(tex: block.tex, display: true), quotePrefix: quotePrefix, to: &out)
+                    if let trailing = block.trailingText, !trailing.isEmpty {
+                        out.append(quotePrefix + scanLine(trailing, registry: registry))
+                    }
                     index = block.closing + 1
                     continue
                 }
@@ -107,6 +110,9 @@ enum MathExtractor {
                    let block = collectBlock(lines: lines, openerRemainder: "", from: index, insideQuote: insideQuote) {
                     out.append(quotePrefix + scanLine(before, registry: registry))
                     appendDisplayToken(registry.register(tex: block.tex, display: true), quotePrefix: quotePrefix, to: &out)
+                    if let trailing = block.trailingText, !trailing.isEmpty {
+                        out.append(quotePrefix + scanLine(trailing, registry: registry))
+                    }
                     index = block.closing + 1
                     continue
                 }
@@ -144,9 +150,11 @@ enum MathExtractor {
     }
 
     /// Gathers a display block's TeX (quote markers stripped) up to its closing `$$`.
+    /// A closer glued to leading text (`$$where …`) ends the block too; the text
+    /// after the delimiter is returned as `trailingText` to be re-emitted as prose.
     private static func collectBlock(
         lines: [String], openerRemainder: String, from index: Int, insideQuote: Bool
-    ) -> (tex: String, closing: Int)? {
+    ) -> (tex: String, closing: Int, trailingText: String?)? {
         guard let closing = findBlockClose(lines: lines, startingAfter: index, insideQuote: insideQuote) else { return nil }
         var texLines: [String] = []
         if !openerRemainder.isEmpty { texLines.append(openerRemainder) }
@@ -155,11 +163,16 @@ enum MathExtractor {
         }
         let closingContent = insideQuote ? splitQuotePrefix(lines[closing]).content : lines[closing]
         let closingTrimmed = closingContent.trimmingCharacters(in: .whitespaces)
-        let closingRemainder = String(closingTrimmed.dropLast(2))
-        if !closingRemainder.isEmpty { texLines.append(closingRemainder) }
+        var trailingText: String? = nil
+        if closingTrimmed.hasSuffix("$$") {
+            let closingRemainder = String(closingTrimmed.dropLast(2))
+            if !closingRemainder.isEmpty { texLines.append(closingRemainder) }
+        } else {
+            trailingText = String(closingTrimmed.dropFirst(2))
+        }
         let tex = texLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !tex.isEmpty else { return nil }
-        return (tex, closing)
+        return (tex, closing, trailingText)
     }
 
     /// Emits a display token as its own paragraph, preserving any blockquote prefix.
