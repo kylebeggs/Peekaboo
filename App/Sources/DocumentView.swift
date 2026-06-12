@@ -22,7 +22,7 @@ struct DocumentView: View {
                 }
                 .padding()
             } else {
-                WebView(document: document)
+                WebView(document: document, fileURL: fileURL)
             }
         }
         .frame(minWidth: 480, minHeight: 320)

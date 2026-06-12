@@ -83,6 +83,9 @@ public struct MarkdownRenderer {
         }
         body = frontMatterHTML + body
         body = HeadingIDs.addAnchors(to: body)
+        // After HeadingIDs so [[#Heading]] anchors resolve against the generated
+        // slugs, before ImageInliner so ![[image]] embeds get inlined.
+        body = WikiLinksPass.transform(html: body)
         if let baseURL = options.baseURL {
             body = ImageInliner.inline(html: body, baseURL: baseURL)
         }

@@ -272,6 +272,114 @@ final class MarkdownRendererTests: XCTestCase {
         XCTAssertFalse(html.contains("markdown-alert"), html)
     }
 
+    // MARK: - Wikilinks
+
+    func testWikiLinkBasic() throws {
+        let html = try render("See [[My Note]] for details.")
+        XCTAssertTrue(html.contains("<a class=\"wikilink\" href=\"peekaboo://wikilink?target=My%20Note\">My Note</a>"),
+                      "expected a wikilink anchor, got:\n\(html)")
+        XCTAssertFalse(html.contains("[["), html)
+    }
+
+    func testWikiLinkAlias() throws {
+        let html = try render("See [[My Note|the note]].")
+        XCTAssertTrue(html.contains("target=My%20Note"), html)
+        XCTAssertTrue(html.contains(">the note</a>"), html)
+        XCTAssertFalse(html.contains("My Note</a>"), html)
+    }
+
+    func testWikiLinkHeading() throws {
+        let html = try render("See [[My Note#Some Section]].")
+        XCTAssertTrue(html.contains("target=My%20Note"), html)
+        XCTAssertTrue(html.contains("heading=Some%20Section"), html)
+        XCTAssertTrue(html.contains(">My Note#Some Section</a>"), html)
+    }
+
+    func testWikiLinkHeadingAndAlias() throws {
+        let html = try render("See [[My Note#Some Section|shortcut]].")
+        XCTAssertTrue(html.contains("heading=Some%20Section"), html)
+        XCTAssertTrue(html.contains(">shortcut</a>"), html)
+    }
+
+    func testSameDocumentHeadingLink() throws {
+        let html = try render("# My Section Title\n\nJump to [[#My Section Title]].")
+        XCTAssertTrue(html.contains("id=\"my-section-title\""), html)
+        XCTAssertTrue(html.contains("<a href=\"#my-section-title\">My Section Title</a>"),
+                      "same-document link should target the heading slug, got:\n\(html)")
+    }
+
+    func testWikiLinkInCodeSpanUntouched() throws {
+        let html = try render("Use `[[Not A Link]]` syntax.")
+        XCTAssertTrue(html.contains("[[Not A Link]]"), html)
+        XCTAssertFalse(html.contains("wikilink"), html)
+    }
+
+    func testWikiLinkInFenceUntouched() throws {
+        let html = try render("```\n[[Not A Link]]\n```")
+        XCTAssertTrue(html.contains("[[Not A Link]]"), html)
+        XCTAssertFalse(html.contains("wikilink"), html)
+    }
+
+    func testWikiLinkAmpersand() throws {
+        let html = try render("See [[Alpha & Beta]].")
+        XCTAssertTrue(html.contains("target=Alpha%20%26%20Beta"),
+                      "ampersand should be percent-encoded in the target, got:\n\(html)")
+        XCTAssertTrue(html.contains(">Alpha &amp; Beta</a>"), html)
+    }
+
+    func testWikiLinkMathHeadingBecomesAnchor() throws {
+        // Wikilinks are opaque to math extraction, so the TeX in the link stays
+        // raw and the slug only matches plain-text headings exactly; the link
+        // must still render without leaking.
+        let html = try render("# Wavevectors ($\\mathbf{k}$)\n\nSee [[#Wavevectors ($\\mathbf{k}$)]].")
+        XCTAssertTrue(html.contains("href=\"#"), html)
+        XCTAssertFalse(html.contains("[["), html)
+    }
+
+    func testWikiLinkCrossNoteWithMathHeading() throws {
+        let html = try render("See [[Other Note#Stability ($\\gamma$)]].")
+        XCTAssertTrue(html.contains("<a class=\"wikilink\""),
+                      "math in the heading must not break the link, got:\n\(html)")
+        XCTAssertTrue(html.contains("target=Other%20Note"), html)
+        XCTAssertFalse(html.contains("[["), html)
+    }
+
+    func testWikiLinkStrayDollarDoesNotSwallowFollowingMath() throws {
+        // Obsidian writes heading-link targets with backslashes stripped, leaving
+        // `$ gamma$` that can't extract as math; the stray $ must not pair with
+        // later math and swallow the closing ]].
+        let html = try render("the complex [[Basics#Constant ($ gamma$)|constants]], we have $\\lambda=j n$ here.")
+        XCTAssertTrue(html.contains(">constants</a>"), "aliased wikilink should render, got:\n\(html)")
+        XCTAssertTrue(html.contains("class=\"katex\""), "following math should still render, got:\n\(html)")
+        XCTAssertFalse(html.contains("[["), html)
+    }
+
+    func testImageEmbed() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("peekaboo-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let png = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")!
+        try png.write(to: dir.appendingPathComponent("pixel.png"))
+
+        let html = try render("![[pixel.png]]", baseURL: dir)
+        XCTAssertTrue(html.contains("data:image/png;base64,"),
+                      "image embed should be inlined, got:\n\(html)")
+    }
+
+    func testImageEmbedWidth() throws {
+        let html = try render("![[diagram.PNG|300]]")
+        XCTAssertTrue(html.contains("<img src=\"diagram.PNG\" width=\"300\">"),
+                      "expected an img tag with width, got:\n\(html)")
+    }
+
+    func testNonImageEmbed() throws {
+        let html = try render("![[Other Note]]")
+        XCTAssertTrue(html.contains("<a class=\"wikilink\""), html)
+        XCTAssertTrue(html.contains("target=Other%20Note"), html)
+    }
+
     // MARK: - Emoji
 
     func testEmojiShortcode() throws {

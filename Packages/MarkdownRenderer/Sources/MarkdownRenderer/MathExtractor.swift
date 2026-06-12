@@ -215,7 +215,11 @@ enum MathExtractor {
             // A truly blank line ends a blockquote, so a quoted block cannot close past one.
             if insideQuote, lines[candidate].trimmingCharacters(in: .whitespaces).isEmpty { return nil }
             let content = insideQuote ? splitQuotePrefix(lines[candidate]).content : lines[candidate]
-            if content.trimmingCharacters(in: .whitespaces).hasSuffix("$$") { return candidate }
+            let trimmed = content.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasSuffix("$$") { return candidate }
+            // Closer glued to leading text (`$$where …`); without this, the next
+            // block's opener is taken as the closer and prose is swallowed as TeX.
+            if trimmed.hasPrefix("$$"), !String(trimmed.dropFirst(2)).contains("$$") { return candidate }
             if openingFence(lines[candidate]) != nil { return nil }
         }
         return nil
@@ -240,6 +244,14 @@ enum MathExtractor {
             }
             if char == "`" {
                 k = copyCodeSpan(chars, from: k, into: &result)
+                continue
+            }
+            if char == "[", k + 1 < chars.count, chars[k + 1] == "[",
+               let close = findWikiLinkClose(chars, from: k + 2) {
+                // Wikilinks are opaque: a stray `$` inside one must not pair with
+                // later math and swallow the `]]` (WikiLinksPass handles the span).
+                result += String(chars[k..<(close + 2)])
+                k = close + 2
                 continue
             }
             if char == "$" {
@@ -294,6 +306,15 @@ enum MathExtractor {
         }
         result += String(chars[start..<runEnd])
         return runEnd
+    }
+
+    private static func findWikiLinkClose(_ chars: [Character], from start: Int) -> Int? {
+        var j = start
+        while j + 1 < chars.count {
+            if chars[j] == "]", chars[j + 1] == "]" { return j }
+            j += 1
+        }
+        return nil
     }
 
     private static func findDoubleDollar(_ chars: [Character], from start: Int) -> Int? {

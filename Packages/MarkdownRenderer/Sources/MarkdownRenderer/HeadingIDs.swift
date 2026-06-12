@@ -34,7 +34,10 @@ enum HeadingIDs {
         return result
     }
 
-    private static func slugify(_ headingHTML: String) -> String {
+    /// Duplicate headings get `-1`, `-2`, … suffixes in addAnchors; a bare
+    /// slugify of the same text always targets the first occurrence (as in
+    /// Obsidian).
+    static func slugify(_ headingHTML: String) -> String {
         let ns = headingHTML as NSString
         var text = tagPattern.stringByReplacingMatches(
             in: headingHTML, range: NSRange(location: 0, length: ns.length), withTemplate: ""

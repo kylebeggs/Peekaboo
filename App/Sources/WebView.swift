@@ -4,6 +4,7 @@ import MarkdownRenderer
 
 struct WebView: NSViewRepresentable {
     let document: RenderedDocument?
+    let fileURL: URL?
     @AppStorage("pageZoom") private var pageZoom = 1.0
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -19,11 +20,13 @@ struct WebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
         webView.pageZoom = pageZoom
+        context.coordinator.fileURL = fileURL
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         webView.pageZoom = pageZoom
+        context.coordinator.fileURL = fileURL
         guard let document else { return }
         context.coordinator.show(document, in: webView)
     }
@@ -57,6 +60,7 @@ struct WebView: NSViewRepresentable {
     }()
 
     final class Coordinator: NSObject, WKNavigationDelegate {
+        var fileURL: URL?
         private var loadedOnce = false
         private var lastBody: String?
 
@@ -95,8 +99,39 @@ struct WebView: NSViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
+            if url.scheme == "peekaboo", url.host == "wikilink" {
+                decisionHandler(.cancel)
+                openWikiLink(url)
+                return
+            }
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
+        }
+
+        private func openWikiLink(_ url: URL) {
+            guard let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                      .queryItems?.first(where: { $0.name == "target" })?.value,
+                  let origin = fileURL else {
+                NSSound.beep()
+                return
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let resolved = WikiLinkResolver.resolve(target: target, from: origin)
+                DispatchQueue.main.async {
+                    guard let resolved else {
+                        NSSound.beep()
+                        return
+                    }
+                    // NSDocumentController, not NSWorkspace: Peekaboo registers as an
+                    // Alternate handler for markdown, so NSWorkspace would open the
+                    // user's default editor instead.
+                    NSDocumentController.shared.openDocument(
+                        withContentsOf: resolved, display: true
+                    ) { _, _, error in
+                        if error != nil { NSSound.beep() }
+                    }
+                }
+            }
         }
 
         private func jsString(_ string: String) -> String {
