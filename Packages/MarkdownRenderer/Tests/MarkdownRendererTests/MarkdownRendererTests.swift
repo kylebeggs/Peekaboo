@@ -148,6 +148,85 @@ final class MarkdownRendererTests: XCTestCase {
         XCTAssertFalse(html.contains("markdown-alert"), html)
     }
 
+    // MARK: - Obsidian callouts
+
+    func testObsidianCalloutWithTitle() throws {
+        let html = try render("> [!info] Custom Title\n> Body here.")
+        XCTAssertTrue(html.contains("markdown-alert-note"), "info should reuse the note style, got:\n\(html)")
+        XCTAssertTrue(html.contains("Custom Title"), html)
+        XCTAssertTrue(html.contains("Body here."), html)
+        XCTAssertFalse(html.contains("[!info]"), html)
+    }
+
+    func testObsidianCalloutKindStyles() throws {
+        for (kind, style) in [("info", "note"), ("question", "warning"), ("danger", "caution"),
+                              ("example", "important"), ("success", "tip")] {
+            let html = try render("> [!\(kind)]\n> Body text.")
+            XCTAssertTrue(html.contains("markdown-alert-\(style)"), "\(kind) should map to \(style), got:\n\(html)")
+        }
+    }
+
+    func testCalloutKindIsCaseInsensitive() throws {
+        let html = try render("> [!INFO] Hilbert Space\n> Body.")
+        XCTAssertTrue(html.contains("markdown-alert-note"), html)
+        XCTAssertTrue(html.contains("Hilbert Space"), html)
+    }
+
+    func testCalloutDefaultTitleIsKindName() throws {
+        let html = try render("> [!question]\n> Body.")
+        XCTAssertTrue(html.contains("Question"), html)
+    }
+
+    func testCalloutWithoutSpaceAfterQuoteMarker() throws {
+        let html = try render(">[!info]\n> Body.")
+        XCTAssertTrue(html.contains("markdown-alert-note"), html)
+        XCTAssertFalse(html.contains("[!info]"), html)
+    }
+
+    func testCalloutTitleWithInlineMath() throws {
+        let html = try render("> [!question] What is $df$ again?\n> Body.")
+        XCTAssertTrue(html.contains("markdown-alert-warning"), html)
+        XCTAssertTrue(html.contains("class=\"katex\""), "math in the title should render, got:\n\(html)")
+        XCTAssertTrue(html.contains("again?"), html)
+    }
+
+    func testCalloutTitleKeepsInlineFormatting() throws {
+        let html = try render("> [!info] See **this** now\n> Body.")
+        XCTAssertTrue(html.contains("<strong>this</strong>"), html)
+        XCTAssertTrue(html.contains("See <strong>"), "space before formatting must survive, got:\n\(html)")
+    }
+
+    func testCalloutWithDisplayMathBody() throws {
+        let html = try render("> [!warning] Not commutative!\n> Careful here\n> $$\n> AB \\neq BA\n> $$")
+        XCTAssertTrue(html.contains("markdown-alert-warning"), html)
+        XCTAssertTrue(html.contains("katex-display"), "display math inside callout should render, got:\n\(html)")
+        XCTAssertFalse(html.contains("$$"), html)
+    }
+
+    func testFoldedCalloutMarker() throws {
+        let html = try render("> [!info]- Folded Title\n> Body.")
+        XCTAssertTrue(html.contains("markdown-alert-note"), html)
+        XCTAssertTrue(html.contains("Folded Title"), html)
+    }
+
+    func testNestedCallouts() throws {
+        let html = try render("> [!note] Outer\n> Outer body.\n> > [!warning] Inner\n> > Inner body.")
+        XCTAssertTrue(html.contains("markdown-alert-note"), html)
+        XCTAssertTrue(html.contains("markdown-alert-warning"), html)
+        XCTAssertTrue(html.contains("Inner body."), html)
+        let outer = html.range(of: "markdown-alert-note")
+        let inner = html.range(of: "markdown-alert-warning")
+        let outerClose = html.range(of: "</div>", options: .backwards)
+        XCTAssertTrue(outer!.lowerBound < inner!.lowerBound && inner!.upperBound < outerClose!.lowerBound,
+                      "inner callout should nest inside the outer, got:\n\(html)")
+    }
+
+    func testUnknownCalloutKindLeftAsBlockquote() throws {
+        let html = try render("> [!notakind] Title\n> Body.")
+        XCTAssertTrue(html.contains("<blockquote>"), html)
+        XCTAssertFalse(html.contains("markdown-alert"), html)
+    }
+
     // MARK: - Emoji
 
     func testEmojiShortcode() throws {

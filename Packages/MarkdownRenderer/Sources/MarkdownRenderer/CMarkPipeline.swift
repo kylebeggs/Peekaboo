@@ -29,7 +29,8 @@ enum CMarkPipeline {
         guard let doc = cmark_parser_finish(parser) else { throw RenderError.parseFailed }
         defer { cmark_node_free(doc) }
 
-        transform(doc: doc, math: math, highlightCode: highlightCode)
+        transform(doc: doc, math: math, highlightCode: highlightCode,
+                  extensions: cmark_parser_get_syntax_extensions(parser))
 
         guard let cHTML = cmark_render_html(doc, CMarkOptions.all, cmark_parser_get_syntax_extensions(parser)) else {
             throw RenderError.renderFailed
@@ -38,7 +39,8 @@ enum CMarkPipeline {
         return String(cString: cHTML)
     }
 
-    private static func transform(doc: CMarkNode, math: MathRegistry, highlightCode: Bool) {
+    private static func transform(doc: CMarkNode, math: MathRegistry, highlightCode: Bool,
+                                  extensions: UnsafeMutablePointer<cmark_llist>?) {
         var codeBlocks: [CMarkNode] = []
         var blockquotes: [CMarkNode] = []
 
@@ -58,7 +60,7 @@ enum CMarkPipeline {
         }
 
         // Mutations happen after iteration completes; the iterator must not see a changing tree.
-        for blockquote in blockquotes { AlertsPass.transform(blockquote: blockquote) }
+        for blockquote in blockquotes { AlertsPass.transform(blockquote: blockquote, extensions: extensions) }
         for codeBlock in codeBlocks { transformCodeBlock(codeBlock, math: math, highlightCode: highlightCode) }
     }
 
