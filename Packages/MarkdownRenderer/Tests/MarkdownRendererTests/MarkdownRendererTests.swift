@@ -97,6 +97,35 @@ final class MarkdownRendererTests: XCTestCase {
         XCTAssertTrue(html.contains("svg") || html.contains("math-error"), html)
     }
 
+    func testDisplayMathInBlockquote() throws {
+        let html = try render("> Some text\n> $$\n> x = y\n> $$")
+        XCTAssertTrue(html.contains("katex-display"), "expected display math inside blockquote, got:\n\(html)")
+        XCTAssertFalse(html.contains("$$"), html)
+        XCTAssertTrue(html.contains("Some text"), html)
+    }
+
+    func testQuotedSingleLineDisplayMath() throws {
+        let html = try render("> $$x = y$$")
+        XCTAssertTrue(html.contains("katex-display"), html)
+        XCTAssertFalse(html.contains("$$"), html)
+    }
+
+    func testGluedDisplayMathOpener() throws {
+        // Obsidian lets a $$ block open at the end of a text line.
+        let html = try render("or $f$ such as$$\nf(x) = x^2\n$$\nmore text")
+        XCTAssertTrue(html.contains("katex-display"), "expected display math, got:\n\(html)")
+        XCTAssertTrue(html.contains("such as"), html)
+        XCTAssertTrue(html.contains("more text"), html)
+        XCTAssertFalse(html.contains("$$"), html)
+    }
+
+    func testGluedOpenerWithoutCloserLeftAlone() throws {
+        let html = try render("price is 5$$\nand that is all")
+        XCTAssertFalse(html.contains("katex"), html)
+        XCTAssertTrue(html.contains("5$$"), html)
+        XCTAssertTrue(html.contains("and that is all"), html)
+    }
+
     // MARK: - Alerts
 
     func testNoteAlert() throws {

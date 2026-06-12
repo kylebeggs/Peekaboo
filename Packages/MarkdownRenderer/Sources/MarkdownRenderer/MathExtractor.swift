@@ -68,25 +68,20 @@ enum MathExtractor {
             }
             previousLineBlankOrIndented = false
 
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Blockquote-aware: `> $$ ... > $$` (Obsidian callout math) is display
+            // math too; the emitted token keeps the quote prefix so the block stays
+            // inside the blockquote.
+            let (quotePrefix, content) = splitQuotePrefix(line)
+            let trimmed = content.trimmingCharacters(in: .whitespaces)
+            let insideQuote = !quotePrefix.isEmpty
 
             // Multi-line $$ block: opener line has no closing $$.
             if trimmed.hasPrefix("$$"), !String(trimmed.dropFirst(2)).contains("$$") {
-                if let closing = findBlockClose(lines: lines, startingAfter: index) {
-                    var texLines: [String] = []
-                    let opener = String(trimmed.dropFirst(2))
-                    if !opener.isEmpty { texLines.append(opener) }
-                    for inner in (index + 1)..<closing { texLines.append(lines[inner]) }
-                    let closingTrimmed = lines[closing].trimmingCharacters(in: .whitespaces)
-                    let closingRemainder = String(closingTrimmed.dropLast(2))
-                    if !closingRemainder.isEmpty { texLines.append(closingRemainder) }
-                    let tex = texLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !tex.isEmpty {
-                        let token = registry.register(tex: tex, display: true)
-                        out.append(contentsOf: ["", token, ""])
-                        index = closing + 1
-                        continue
-                    }
+                let opener = String(trimmed.dropFirst(2))
+                if let block = collectBlock(lines: lines, openerRemainder: opener, from: index, insideQuote: insideQuote) {
+                    appendDisplayToken(registry.register(tex: block.tex, display: true), quotePrefix: quotePrefix, to: &out)
+                    index = block.closing + 1
+                    continue
                 }
                 out.append(line)
                 index += 1
@@ -98,8 +93,21 @@ enum MathExtractor {
                 let inner = String(trimmed.dropFirst(2).dropLast(2))
                 if !inner.contains("$$"), !inner.trimmingCharacters(in: .whitespaces).isEmpty {
                     let token = registry.register(tex: inner.trimmingCharacters(in: .whitespaces), display: true)
-                    out.append(contentsOf: ["", token, ""])
+                    appendDisplayToken(token, quotePrefix: quotePrefix, to: &out)
                     index += 1
+                    continue
+                }
+            }
+
+            // Opener glued to trailing text (Obsidian style): "... such as$$".
+            // Left unpaired it would mispair every later $$ delimiter.
+            if trimmed.hasSuffix("$$"), trimmed.count > 2 {
+                let before = String(trimmed.dropLast(2))
+                if !before.contains("$$"), !before.hasSuffix("\\"),
+                   let block = collectBlock(lines: lines, openerRemainder: "", from: index, insideQuote: insideQuote) {
+                    out.append(quotePrefix + scanLine(before, registry: registry))
+                    appendDisplayToken(registry.register(tex: block.tex, display: true), quotePrefix: quotePrefix, to: &out)
+                    index = block.closing + 1
                     continue
                 }
             }
@@ -108,6 +116,56 @@ enum MathExtractor {
             index += 1
         }
         return out.joined(separator: "\n")
+    }
+
+    // MARK: - Blockquotes
+
+    /// Splits leading blockquote markers (`> `, possibly nested) from a line.
+    private static func splitQuotePrefix(_ line: String) -> (prefix: String, content: String) {
+        let chars = Array(line)
+        var i = 0
+        var lastMarkerEnd = 0
+        var spaces = 0
+        while i < chars.count {
+            if chars[i] == " ", spaces < 3 {
+                spaces += 1
+                i += 1
+            } else if chars[i] == ">" {
+                i += 1
+                if i < chars.count, chars[i] == " " { i += 1 }
+                lastMarkerEnd = i
+                spaces = 0
+            } else {
+                break
+            }
+        }
+        guard lastMarkerEnd > 0 else { return ("", line) }
+        return (String(chars[0..<lastMarkerEnd]), String(chars[lastMarkerEnd...]))
+    }
+
+    /// Gathers a display block's TeX (quote markers stripped) up to its closing `$$`.
+    private static func collectBlock(
+        lines: [String], openerRemainder: String, from index: Int, insideQuote: Bool
+    ) -> (tex: String, closing: Int)? {
+        guard let closing = findBlockClose(lines: lines, startingAfter: index, insideQuote: insideQuote) else { return nil }
+        var texLines: [String] = []
+        if !openerRemainder.isEmpty { texLines.append(openerRemainder) }
+        for inner in (index + 1)..<closing {
+            texLines.append(insideQuote ? splitQuotePrefix(lines[inner]).content : lines[inner])
+        }
+        let closingContent = insideQuote ? splitQuotePrefix(lines[closing]).content : lines[closing]
+        let closingTrimmed = closingContent.trimmingCharacters(in: .whitespaces)
+        let closingRemainder = String(closingTrimmed.dropLast(2))
+        if !closingRemainder.isEmpty { texLines.append(closingRemainder) }
+        let tex = texLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tex.isEmpty else { return nil }
+        return (tex, closing)
+    }
+
+    /// Emits a display token as its own paragraph, preserving any blockquote prefix.
+    private static func appendDisplayToken(_ token: String, quotePrefix: String, to out: inout [String]) {
+        let blank = quotePrefix.hasSuffix(" ") ? String(quotePrefix.dropLast()) : quotePrefix
+        out.append(contentsOf: [blank, quotePrefix + token, blank])
     }
 
     // MARK: - Fences
@@ -138,11 +196,13 @@ enum MathExtractor {
         return trimmed.allSatisfy { $0 == fence.char }
     }
 
-    private static func findBlockClose(lines: [String], startingAfter index: Int) -> Int? {
+    private static func findBlockClose(lines: [String], startingAfter index: Int, insideQuote: Bool) -> Int? {
         let limit = min(lines.count, index + 200)
         for candidate in (index + 1)..<limit {
-            let trimmed = lines[candidate].trimmingCharacters(in: .whitespaces)
-            if trimmed.hasSuffix("$$") { return candidate }
+            // A truly blank line ends a blockquote, so a quoted block cannot close past one.
+            if insideQuote, lines[candidate].trimmingCharacters(in: .whitespaces).isEmpty { return nil }
+            let content = insideQuote ? splitQuotePrefix(lines[candidate]).content : lines[candidate]
+            if content.trimmingCharacters(in: .whitespaces).hasSuffix("$$") { return candidate }
             if openingFence(lines[candidate]) != nil { return nil }
         }
         return nil
