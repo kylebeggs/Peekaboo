@@ -180,7 +180,10 @@ final class MarkdownRendererTests: XCTestCase {
     }
 
     func testImageInlining() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("peekaboo-test-\(UUID().uuidString)")
+        // isDirectory: true is required: without the trailing slash, relative
+        // resolution against this base URL drops the directory component.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("peekaboo-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         // 1x1 transparent PNG
