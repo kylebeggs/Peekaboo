@@ -16,6 +16,9 @@ final class CommentStore: ObservableObject {
     @Published var pending: PendingComment?
     @Published var selectedThreadID: String?
     @Published private(set) var outdatedIDs: Set<String> = []
+    /// Inline thread id → its position in the rendered document, reported by the web
+    /// view; drives top-to-bottom ordering of inline threads in the sidebar.
+    @Published private(set) var inlineDocumentOrder: [String: Int] = [:]
 
     /// Set by the web view; scrolls the rendered document to a thread's highlight.
     var scrollHandler: ((String) -> Void)?
@@ -91,8 +94,9 @@ final class CommentStore: ObservableObject {
 
     // MARK: - Web-view callbacks
 
-    func setOutdated(_ ids: [String]) {
+    func setOutdated(_ ids: [String], order: [String]) {
         outdatedIDs = Set(ids)
+        inlineDocumentOrder = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
     }
 
     func selectThread(_ id: String) {

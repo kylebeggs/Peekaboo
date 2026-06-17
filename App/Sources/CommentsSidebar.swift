@@ -9,8 +9,8 @@ struct CommentsSidebar: View {
     @State private var pendingText = ""
     @FocusState private var pendingFocused: Bool
 
-    private var orderedThreads: [CommentThread] {
-        store.threads.filter { $0.status == .open } + store.threads.filter { $0.status == .resolved }
+    private var groups: (general: [CommentThread], inline: [CommentThread]) {
+        CommentOrdering.grouped(store.threads, documentOrder: store.inlineDocumentOrder)
     }
 
     var body: some View {
@@ -21,17 +21,15 @@ struct CommentsSidebar: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        if orderedThreads.isEmpty && store.pending == nil {
+                        let ordered = groups
+                        if ordered.general.isEmpty && ordered.inline.isEmpty && store.pending == nil {
                             emptyState
                         }
-                        ForEach(orderedThreads, id: \.id) { thread in
-                            ThreadCard(
-                                store: store,
-                                thread: thread,
-                                isSelected: store.selectedThreadID == thread.id,
-                                isOutdated: store.outdatedIDs.contains(thread.id))
-                                .id(thread.id)
+                        ForEach(ordered.general, id: \.id) { card($0) }
+                        if !ordered.general.isEmpty && !ordered.inline.isEmpty {
+                            Divider().padding(.vertical, 4)
                         }
+                        ForEach(ordered.inline, id: \.id) { card($0) }
                     }
                     .padding(8)
                 }
@@ -43,6 +41,16 @@ struct CommentsSidebar: View {
         }
         .frame(minWidth: 260)
         .background(.background)
+    }
+
+    @ViewBuilder
+    private func card(_ thread: CommentThread) -> some View {
+        ThreadCard(
+            store: store,
+            thread: thread,
+            isSelected: store.selectedThreadID == thread.id,
+            isOutdated: store.outdatedIDs.contains(thread.id))
+            .id(thread.id)
     }
 
     private var header: some View {
@@ -209,7 +217,7 @@ private struct ThreadCard: View {
 private struct QuoteView: View {
     let text: String
     var body: some View {
-        Text(text)
+        Text(text.split(whereSeparator: \.isWhitespace).joined(separator: " "))
             .font(.callout)
             .italic()
             .lineLimit(3)

@@ -118,7 +118,7 @@ struct WebView: NSViewRepresentable {
             case "select":
                 if let id = body["id"] as? String { store.selectThread(id) }
             case "outdated":
-                store.setOutdated(body["ids"] as? [String] ?? [])
+                store.setOutdated(body["ids"] as? [String] ?? [], order: body["order"] as? [String] ?? [])
             default:
                 break
             }

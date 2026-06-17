@@ -211,15 +211,20 @@ enum CommentBridge {
         apply: function(anchors) {
           if (anchors) this.lastAnchors = anchors;
           clearHighlights();
-          var outdated = [];
+          var outdated = [], resolved = [];
           var list = this.lastAnchors || [];
           for (var i = 0; i < list.length; i++) {
             var a = list[i];
             var index = buildIndex();
             var pos = findMatch(index.text, a);
-            if (pos < 0 || !wrap(index, pos, pos + a.quote.length, a.id)) outdated.push(a.id);
+            if (pos < 0 || !wrap(index, pos, pos + a.quote.length, a.id)) {
+              outdated.push(a.id);
+            } else {
+              resolved.push({ id: a.id, pos: pos });
+            }
           }
-          post({ type: 'outdated', ids: outdated });
+          resolved.sort(function(x, y) { return x.pos - y.pos; });
+          post({ type: 'outdated', ids: outdated, order: resolved.map(function(r) { return r.id; }) });
         },
         scrollTo: function(id) {
           var el = document.querySelector('span.pkb-hl[data-pkb-id="' + id + '"]');
