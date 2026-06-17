@@ -41,19 +41,22 @@ struct DocumentView: View {
             .help("Zoom In")
         }
         .task {
-            await render(markdown: initialText)
+            await render(text: initialText)
             startWatching()
         }
     }
 
-    private func render(markdown: String) async {
+    private func render(text: String) async {
         let url = fileURL
         let result = await Task.detached(priority: .userInitiated) { () -> Result<RenderedDocument, Error> in
             var options = RenderOptions()
             options.baseURL = url?.deletingLastPathComponent()
             options.title = url?.lastPathComponent ?? "Markdown"
             do {
-                return .success(try MarkdownRenderer().renderDocument(markdown: markdown, options: options))
+                return .success(try MarkdownRenderer().renderDocument(
+                    fileContents: text,
+                    pathExtension: url?.pathExtension ?? "",
+                    options: options))
             } catch {
                 return .failure(error)
             }
@@ -71,8 +74,8 @@ struct DocumentView: View {
         guard watcher == nil, let url = fileURL else { return }
         watcher = FileWatcher(url: url) {
             guard let data = try? Data(contentsOf: url) else { return }
-            let markdown = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
-            Task { await render(markdown: markdown) }
+            let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+            Task { await render(text: text) }
         }
     }
 }
