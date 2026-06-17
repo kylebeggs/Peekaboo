@@ -16,7 +16,7 @@ struct DocumentView: View {
     @AppStorage("pageZoom") private var pageZoom = 1.0
     @AppStorage("showCommentsPanel") private var showComments = false
     @AppStorage("commentsTextPaneWidth") private var textPaneWidth = 900.0
-    @AppStorage("commentsSidebarWidth") private var sidebarWidth = 320.0
+    @AppStorage("commentsSidebarWidth") private var sidebarWidth = 400.0
 
     init(initialText: String, fileURL: URL?) {
         self.initialText = initialText
