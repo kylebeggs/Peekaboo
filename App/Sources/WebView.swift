@@ -5,6 +5,7 @@ import MarkdownRenderer
 struct WebView: NSViewRepresentable {
     let document: RenderedDocument?
     let fileURL: URL?
+    @ObservedObject var store: CommentStore
     @AppStorage("pageZoom") private var pageZoom = 1.0
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -16,19 +17,33 @@ struct WebView: NSViewRepresentable {
                 WKUserScript(source: mermaid, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
             )
         }
+        // Added after Mermaid so it can wrap the shared `__peekabooRender` hook.
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: CommentBridge.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        configuration.userContentController.add(context.coordinator, name: "pkbComment")
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
         webView.pageZoom = pageZoom
         context.coordinator.fileURL = fileURL
+        context.coordinator.store = store
+        context.coordinator.webView = webView
+        store.scrollHandler = { [weak coordinator = context.coordinator] id in coordinator?.scrollTo(id) }
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         webView.pageZoom = pageZoom
         context.coordinator.fileURL = fileURL
+        context.coordinator.store = store
         guard let document else { return }
         context.coordinator.show(document, in: webView)
+        context.coordinator.syncAnchors()
+    }
+
+    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "pkbComment")
     }
 
     /// mermaid.min.js plus an init hook. The hook is re-invoked after live-reload
@@ -59,10 +74,55 @@ struct WebView: NSViewRepresentable {
         return library + hook
     }()
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var fileURL: URL?
+        weak var store: CommentStore?
+        weak var webView: WKWebView?
         private var loadedOnce = false
         private var lastBody: String?
+        private var lastAnchorsJSON: String?
+
+        /// Pushes the open inline anchors to the page for (re)highlighting, skipping
+        /// the round-trip when the set is unchanged.
+        func syncAnchors() {
+            guard let store, let webView else { return }
+            let json = CommentBridge.anchorsJSON(store.openInlineThreads)
+            guard json != lastAnchorsJSON else { return }
+            lastAnchorsJSON = json
+            webView.evaluateJavaScript("window.__pkb && window.__pkb.apply(\(json));")
+        }
+
+        func scrollTo(_ id: String) {
+            webView?.evaluateJavaScript("window.__pkb && window.__pkb.scrollTo(\(jsString(id)));")
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            lastAnchorsJSON = nil // page reloaded; force a re-push
+            syncAnchors()
+        }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "pkbComment",
+                  let body = message.body as? [String: Any],
+                  let type = body["type"] as? String,
+                  let store else { return }
+            switch type {
+            case "add":
+                guard let raw = body["anchor"] as? [String: Any] else { return }
+                let anchor = CommentAnchor(
+                    quote: raw["quote"] as? String ?? "",
+                    prefix: raw["prefix"] as? String ?? "",
+                    suffix: raw["suffix"] as? String ?? "")
+                guard !anchor.quote.isEmpty else { return }
+                store.beginInlineComment(anchor)
+            case "select":
+                if let id = body["id"] as? String { store.selectThread(id) }
+            case "outdated":
+                store.setOutdated(body["ids"] as? [String] ?? [])
+            default:
+                break
+            }
+        }
 
         func show(_ document: RenderedDocument, in webView: WKWebView) {
             guard document.bodyHTML != lastBody else { return }
