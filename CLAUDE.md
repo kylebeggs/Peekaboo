@@ -15,7 +15,7 @@ Peekaboo is a macOS markdown viewer app with a Quick Look extension. Both render
 
 `Scripts/peekaboo` is a thin `open -a Peekaboo` wrapper; `install.sh` copies it to `/opt/homebrew/bin/peekaboo` so `peekaboo file.md` opens files in the app.
 
-After any code change, always run `./Scripts/build.sh` then `./Scripts/install.sh` to install the updated app and refresh caches — `install.sh` re-registers the Quick Look extension and flushes the QL cache (`qlmanage -r` / `-r cache`), which is required for changes to show up.
+After any code change, ALWAYS run BOTH `./Scripts/build.sh` then `./Scripts/install.sh` — do not stop at `build.sh` and do not defer `install.sh` to the user. `install.sh` copies the app to `/Applications`, re-registers the Quick Look extension, and flushes the QL cache (`qlmanage -r` / `-r cache`); without it the changes will not show up in the running app or in Quick Look. This is required even though `install.sh` writes to `/Applications` — installing is part of completing a code change here, not an optional follow-up.
 
 Tests live in the Swift package, not an Xcode test target:
 
