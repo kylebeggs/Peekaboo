@@ -5,13 +5,16 @@ import MarkdownRenderer
 final class PreviewProvider: QLPreviewProvider, QLPreviewingController {
     func providePreview(for request: QLFilePreviewRequest) async throws -> QLPreviewReply {
         let data = try Data(contentsOf: request.fileURL)
-        let markdown = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+        let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
 
         var options = RenderOptions()
         options.baseURL = request.fileURL.deletingLastPathComponent()
         options.title = request.fileURL.lastPathComponent
         options.pageZoom = 0.9
-        let html = try MarkdownRenderer().renderHTML(markdown: markdown, options: options)
+        let html = try MarkdownRenderer().renderDocument(
+            fileContents: text,
+            pathExtension: request.fileURL.pathExtension,
+            options: options).html
 
         let reply = QLPreviewReply(
             dataOfContentType: .html,

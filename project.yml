@@ -45,6 +45,12 @@ targets:
             LSHandlerRank: Alternate
             LSItemContentTypes:
               - net.daringfireball.markdown
+          - CFBundleTypeName: Source Code
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.source-code
+              - com.peekaboo.julia-source
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: net.daringfireball.markdown
             UTTypeConformsTo:
@@ -59,6 +65,13 @@ targets:
                 - mkdn
               public.mime-type:
                 - text/markdown
+          - UTTypeIdentifier: com.peekaboo.julia-source
+            UTTypeConformsTo:
+              - public.source-code
+            UTTypeDescription: Julia Source
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - jl
 
   PeekabooQuickLook:
     type: app-extension
@@ -86,4 +99,6 @@ targets:
             QLSupportedContentTypes:
               - net.daringfireball.markdown
               - public.markdown
+              - public.source-code
+              - com.peekaboo.julia-source
             QLIsDataBasedPreview: true

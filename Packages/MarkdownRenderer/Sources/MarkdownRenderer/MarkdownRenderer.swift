@@ -99,6 +99,36 @@ public struct MarkdownRenderer {
     public func renderHTML(markdown: String, options: RenderOptions = RenderOptions()) throws -> String {
         try renderDocument(markdown: markdown, options: options).html
     }
+
+    /// Renders the contents of a file, routing by extension: recognized source-code
+    /// types are syntax-highlighted; markdown and unrecognized types render as markdown.
+    public func renderDocument(fileContents: String, pathExtension: String, options: RenderOptions = RenderOptions()) throws -> RenderedDocument {
+        guard let language = CodeLanguage.highlightLanguage(forPathExtension: pathExtension) else {
+            return try renderDocument(markdown: fileContents, options: options)
+        }
+        return try renderDocument(sourceCode: fileContents, language: language, options: options)
+    }
+
+    /// Wraps `sourceCode` in a fenced code block tagged `language` and renders it
+    /// through the markdown pipeline. The fence is longer than any backtick run in
+    /// the source so an embedded ``` cannot close the block early.
+    public func renderDocument(sourceCode: String, language: String, options: RenderOptions = RenderOptions()) throws -> RenderedDocument {
+        let fence = String(repeating: "`", count: max(3, longestBacktickRun(in: sourceCode) + 1))
+        return try renderDocument(markdown: "\(fence)\(language)\n\(sourceCode)\n\(fence)\n", options: options)
+    }
+
+    private func longestBacktickRun(in text: String) -> Int {
+        var longest = 0, current = 0
+        for character in text {
+            if character == "`" {
+                current += 1
+                longest = max(longest, current)
+            } else {
+                current = 0
+            }
+        }
+        return longest
+    }
 }
 
 func escapeHTML(_ string: String) -> String {

@@ -3,7 +3,8 @@ import UniformTypeIdentifiers
 
 struct MarkdownFile: FileDocument {
     static let markdownType = UTType(importedAs: "net.daringfireball.markdown")
-    static var readableContentTypes: [UTType] { [markdownType, .plainText] }
+    static let juliaType = UTType(importedAs: "com.peekaboo.julia-source")
+    static var readableContentTypes: [UTType] { [markdownType, .plainText, .sourceCode, juliaType] }
 
     let text: String
 
