@@ -150,7 +150,7 @@ private struct ThreadCard: View {
                 Tag(text: "outdated", color: .orange)
             }
             Spacer()
-            if thread.kind == .inline && !isOutdated && thread.status == .open {
+            if thread.kind == .inline && !isOutdated {
                 Button { store.scrollTo(thread.id) } label: {
                     Image(systemName: "scope")
                 }

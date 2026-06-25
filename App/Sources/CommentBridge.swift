@@ -9,10 +9,11 @@ import MarkdownRenderer
 /// `window.__peekabooRender` hook (the same one Mermaid uses).
 enum CommentBridge {
     static func anchorsJSON(_ threads: [CommentThread]) -> String {
-        struct Payload: Encodable { let id, quote, prefix, suffix: String }
+        struct Payload: Encodable { let id, quote, prefix, suffix: String; let resolved: Bool }
         let payload = threads.compactMap { thread -> Payload? in
             guard let anchor = thread.anchor else { return nil }
-            return Payload(id: thread.id, quote: anchor.quote, prefix: anchor.prefix, suffix: anchor.suffix)
+            return Payload(id: thread.id, quote: anchor.quote, prefix: anchor.prefix, suffix: anchor.suffix,
+                           resolved: thread.status == .resolved)
         }
         guard let data = try? JSONEncoder().encode(payload),
               let json = String(data: data, encoding: .utf8) else { return "[]" }
@@ -125,7 +126,7 @@ enum CommentBridge {
         }
       }
 
-      function wrap(index, gStart, gEnd, id) {
+      function wrap(index, gStart, gEnd, id, resolved) {
         var parts = [];
         for (var i = 0; i < index.segs.length; i++) {
           var seg = index.segs[i];
@@ -141,7 +142,7 @@ enum CommentBridge {
             r.setStart(p.node, p.from);
             r.setEnd(p.node, p.to);
             var span = document.createElement('span');
-            span.className = 'pkb-hl';
+            span.className = resolved ? 'pkb-hl pkb-hl-resolved' : 'pkb-hl';
             span.setAttribute('data-pkb-id', id);
             r.surroundContents(span);
             wrapped = true;
@@ -156,6 +157,7 @@ enum CommentBridge {
         st.id = 'pkb-style';
         st.textContent =
           'span.pkb-hl{background:rgba(255,212,0,0.35);border-radius:2px;cursor:pointer;}' +
+          'span.pkb-hl.pkb-hl-resolved{background:transparent;cursor:auto;}' +
           'span.pkb-hl.pkb-flash{animation:pkbflash 1.2s ease-out;}' +
           '@keyframes pkbflash{from{background:rgba(255,212,0,0.95);}to{background:rgba(255,212,0,0.35);}}' +
           '#pkb-fab{position:absolute;z-index:99999;display:none;font:12px -apple-system,system-ui,sans-serif;' +
@@ -217,7 +219,7 @@ enum CommentBridge {
             var a = list[i];
             var index = buildIndex();
             var pos = findMatch(index.text, a);
-            if (pos < 0 || !wrap(index, pos, pos + a.quote.length, a.id)) {
+            if (pos < 0 || !wrap(index, pos, pos + a.quote.length, a.id, a.resolved)) {
               outdated.push(a.id);
             } else {
               resolved.push({ id: a.id, pos: pos });

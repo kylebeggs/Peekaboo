@@ -40,8 +40,8 @@ final class CommentStore: ObservableObject {
         ensureWatching()
     }
 
-    var openInlineThreads: [CommentThread] {
-        threads.filter { $0.kind == .inline && $0.status == .open }
+    var inlineThreads: [CommentThread] {
+        threads.filter { $0.kind == .inline }
     }
 
     // MARK: - Mutations

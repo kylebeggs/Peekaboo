@@ -86,7 +86,7 @@ struct WebView: NSViewRepresentable {
         /// the round-trip when the set is unchanged.
         func syncAnchors() {
             guard let store, let webView else { return }
-            let json = CommentBridge.anchorsJSON(store.openInlineThreads)
+            let json = CommentBridge.anchorsJSON(store.inlineThreads)
             guard json != lastAnchorsJSON else { return }
             lastAnchorsJSON = json
             webView.evaluateJavaScript("window.__pkb && window.__pkb.apply(\(json));")
