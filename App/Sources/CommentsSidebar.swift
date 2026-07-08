@@ -168,8 +168,8 @@ private struct ThreadCard: View {
     }
 
     private var messages: some View {
-        ForEach(Array(thread.messages.enumerated()), id: \.offset) { _, message in
-            MessageView(message: message)
+        ForEach(Array(thread.messages.enumerated()), id: \.offset) { index, message in
+            MessageView(store: store, threadID: thread.id, index: index, message: message)
         }
     }
 
@@ -228,16 +228,66 @@ private struct QuoteView: View {
 }
 
 private struct MessageView: View {
+    @ObservedObject var store: CommentStore
+    let threadID: String
+    let index: Int
     let message: CommentMessage
+
+    @State private var isEditing = false
+    @State private var editText = ""
+    @FocusState private var editFocused: Bool
+
+    private var isEditable: Bool { message.speaker == CommentStore.localSpeaker }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(message.speaker).font(.caption).bold()
                 Text(message.timestamp).font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                if isEditable && !isEditing {
+                    Button { beginEdit() } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Edit comment")
+                }
             }
-            Text(message.body).font(.callout).textSelection(.enabled)
+            if isEditing {
+                editor
+            } else {
+                Text(message.body).font(.callout).textSelection(.enabled)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var editor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField("Comment…", text: $editText, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...6)
+                .focused($editFocused)
+            HStack {
+                Spacer()
+                Button("Cancel") { isEditing = false }
+                Button("Save") { commitEdit() }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .font(.caption)
+        }
+    }
+
+    private func beginEdit() {
+        editText = message.body
+        isEditing = true
+        editFocused = true
+    }
+
+    private func commitEdit() {
+        store.editMessage(in: threadID, at: index, body: editText)
+        isEditing = false
     }
 }
 

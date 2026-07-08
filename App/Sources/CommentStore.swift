@@ -23,6 +23,9 @@ final class CommentStore: ObservableObject {
     /// Set by the web view; scrolls the rendered document to a thread's highlight.
     var scrollHandler: ((String) -> Void)?
 
+    /// Speaker stamped on messages the user writes; only these are editable.
+    static let localSpeaker = "You"
+
     let sidecarURL: URL?
     private let documentName: String
     private var watcher: FileWatcher?
@@ -92,6 +95,16 @@ final class CommentStore: ObservableObject {
         save()
     }
 
+    func editMessage(in threadID: String, at index: Int, body: String) {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let ti = threads.firstIndex(where: { $0.id == threadID }),
+              threads[ti].messages.indices.contains(index),
+              threads[ti].messages[index].speaker == Self.localSpeaker else { return }
+        threads[ti].messages[index].body = trimmed
+        save()
+    }
+
     // MARK: - Web-view callbacks
 
     func setOutdated(_ ids: [String], order: [String]) {
@@ -152,7 +165,7 @@ final class CommentStore: ObservableObject {
     // MARK: - Helpers
 
     private func message(_ body: String) -> CommentMessage {
-        CommentMessage(speaker: "You", timestamp: Self.timestampFormatter.string(from: Date()), body: body)
+        CommentMessage(speaker: Self.localSpeaker, timestamp: Self.timestampFormatter.string(from: Date()), body: body)
     }
 
     private func newID() -> String {
