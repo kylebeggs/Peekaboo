@@ -256,7 +256,7 @@ private struct MessageView: View {
             if isEditing {
                 editor
             } else {
-                Text(message.body).font(.callout).textSelection(.enabled)
+                CommentBodyView(text: message.body, cache: store.renderCache)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

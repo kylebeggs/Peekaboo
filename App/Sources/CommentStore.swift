@@ -27,11 +27,13 @@ final class CommentStore: ObservableObject {
     static let localSpeaker = "You"
 
     let sidecarURL: URL?
+    let renderCache: CommentRenderCache
     private let documentName: String
     private var watcher: FileWatcher?
     private var lastWrittenText: String?
 
     init(documentURL: URL?) {
+        renderCache = CommentRenderCache(baseURL: documentURL?.deletingLastPathComponent())
         if let url = documentURL, !ReviewFile.isSidecar(url) {
             sidecarURL = ReviewFile.sidecarURL(forDocument: url)
             documentName = url.lastPathComponent
