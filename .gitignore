@@ -3,3 +3,5 @@
 Peekaboo.xcodeproj/
 xcuserdata/
 DerivedData/
+handoffs/
+.claude/
