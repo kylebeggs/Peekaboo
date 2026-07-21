@@ -6,16 +6,29 @@
 
 A fast macOS Markdown viewer with native Quick Look previews.
 
-## What it is
-
 macOS doesn't render Markdown well out of the box: opening a `.md` file in an editor is heavy,
 and Finder's Quick Look just shows the raw text. Peekaboo fixes that. It renders Markdown the
 way you'd see it on GitHub — both as a real app window and as a Finder **Quick Look** preview
-(select a file and press space).
+(select a file and press space). Everything renders **fully offline**: the CSS, web fonts, math
+typesetting, and syntax-highlighting assets are all inlined into the generated HTML, so a
+preview never touches the network — which is what lets the sandboxed Quick Look extension work
+at all.
 
-Everything renders **fully offline**. The CSS, web fonts, math typesetting, and
-syntax-highlighting assets are all inlined into the generated HTML, so a preview never touches
-the network — which is what lets the sandboxed Quick Look extension work at all.
+## Install
+
+Requires macOS 13+, [Xcode](https://developer.apple.com/xcode/), and
+[`xcodegen`](https://github.com/yonaskolb/XcodeGen):
+
+```bash
+brew install xcodegen   # one-time
+git clone https://github.com/kylebeggs/Peekaboo.git
+cd Peekaboo && ./Scripts/build.sh && ./Scripts/install.sh
+```
+
+`build.sh` generates the Xcode project and builds a Release app (DerivedData → `/tmp/peekaboo-dd`).
+`install.sh` copies it to `/Applications`, registers the Quick Look extension (and flushes its
+cache), and installs the `peekaboo` command-line wrapper. Re-run both after pulling updates —
+`install.sh` is what makes new builds show up in the app and in Quick Look.
 
 ## Features
 
@@ -30,24 +43,6 @@ the network — which is what lets the sandboxed Quick Look extension work at al
 - **Light / dark mode** following the system appearance
 - **Review-comment sidebar** for annotating documents
 - **Self-contained output** — local images are inlined as data URIs
-
-## Requirements
-
-- macOS 13 or later
-- Xcode / `xcodebuild` and [`xcodegen`](https://github.com/yonaskolb/XcodeGen) to build
-  (`brew install xcodegen`)
-- `rsvg-convert` only if you regenerate the app icons
-
-## Install
-
-```bash
-./Scripts/build.sh     # xcodegen generate + Release build (DerivedData → /tmp/peekaboo-dd)
-./Scripts/install.sh   # copy app to /Applications, register the Quick Look extension, install the `peekaboo` CLI
-```
-
-`install.sh` is the step that registers the Quick Look extension (and flushes its cache) and
-installs the `peekaboo` command-line wrapper to `/opt/homebrew/bin`. Run it after every build,
-not just the first time.
 
 ## Usage
 
@@ -93,6 +88,9 @@ Render a file straight to HTML from the command line:
 ```bash
 markdown-render-cli file.md > out.html
 ```
+
+Regenerating the app icons (`Scripts/make-icons.sh`) additionally needs `rsvg-convert`
+(`brew install librsvg`).
 
 ## Project layout
 
