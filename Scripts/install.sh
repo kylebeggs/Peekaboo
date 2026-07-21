@@ -17,13 +17,16 @@ qlmanage -r >/dev/null 2>&1 || true
 qlmanage -r cache >/dev/null 2>&1 || true
 
 CLI_SRC="$(cd "$(dirname "$0")" && pwd)/peekaboo"
-BIN_DIR="/opt/homebrew/bin"
-if [[ -w "$BIN_DIR" ]]; then
-  install -m 755 "$CLI_SRC" "$BIN_DIR/peekaboo"
-  echo "Installed CLI: $BIN_DIR/peekaboo"
-else
-  echo "Skipped CLI install: $BIN_DIR not writable" >&2
-fi
+CLI_INSTALLED=false
+for BIN_DIR in /opt/homebrew/bin /usr/local/bin; do
+  if [[ -d "$BIN_DIR" && -w "$BIN_DIR" ]]; then
+    install -m 755 "$CLI_SRC" "$BIN_DIR/peekaboo"
+    echo "Installed CLI: $BIN_DIR/peekaboo"
+    CLI_INSTALLED=true
+    break
+  fi
+done
+$CLI_INSTALLED || echo "Skipped CLI install: no writable bin dir (/opt/homebrew/bin or /usr/local/bin)" >&2
 
 echo "Installed $DEST"
 echo "Extension status:"
