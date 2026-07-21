@@ -51,6 +51,14 @@ struct DocumentView: View {
         }
         .frame(minWidth: 480, minHeight: 320)
         .toolbar {
+            if let fileURL {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                .help("Show in Finder")
+            }
             Button {
                 pageZoom = Zoom.zoomedOut(pageZoom)
             } label: {
