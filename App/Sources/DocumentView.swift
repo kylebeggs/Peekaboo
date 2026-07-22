@@ -10,6 +10,9 @@ struct DocumentView: View {
 
     @StateObject private var store: CommentStore
     @State private var document: RenderedDocument?
+    @State private var rawDocument: RenderedDocument?
+    @State private var showSource = false
+    @State private var sourceText: String
     @State private var renderError: String?
     @State private var watcher: FileWatcher?
     @State private var window: NSWindow?
@@ -21,10 +24,13 @@ struct DocumentView: View {
     init(initialText: String, fileURL: URL?) {
         self.initialText = initialText
         self.fileURL = fileURL
+        _sourceText = State(initialValue: initialText)
         _store = StateObject(wrappedValue: CommentStore(documentURL: fileURL))
     }
 
     private var commentsEnabled: Bool { store.sidecarURL != nil }
+
+    private var displayedDocument: RenderedDocument? { showSource ? rawDocument : document }
 
     var body: some View {
         Group {
@@ -39,14 +45,14 @@ struct DocumentView: View {
                 .padding()
             } else if commentsEnabled && showComments {
                 HStack(spacing: 0) {
-                    WebView(document: document, fileURL: fileURL, store: store)
+                    WebView(document: displayedDocument, fileURL: fileURL, store: store)
                         .frame(width: textPaneWidth)
                     Divider()
                     CommentsSidebar(store: store)
                         .frame(minWidth: minSidebarWidth)
                 }
             } else {
-                WebView(document: document, fileURL: fileURL, store: store)
+                WebView(document: displayedDocument, fileURL: fileURL, store: store)
             }
         }
         .frame(minWidth: 480, minHeight: 320)
@@ -60,6 +66,13 @@ struct DocumentView: View {
                 .help("Show in Finder")
             }
             Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(sourceText, forType: .string)
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .help("Copy markdown source")
+            Button {
                 pageZoom = Zoom.zoomedOut(pageZoom)
             } label: {
                 Label("Zoom Out", systemImage: "minus.magnifyingglass")
@@ -71,6 +84,16 @@ struct DocumentView: View {
                 Label("Zoom In", systemImage: "plus.magnifyingglass")
             }
             .help("Zoom In")
+            Button {
+                showSource.toggle()
+                if showSource && rawDocument == nil {
+                    let text = sourceText
+                    Task { await renderRaw(text: text) }
+                }
+            } label: {
+                Label("Source", systemImage: "chevron.left.forwardslash.chevron.right")
+            }
+            .help(showSource ? "Show rendered markdown" : "Show markdown source")
             if commentsEnabled {
                 Button {
                     showComments.toggle()
@@ -121,6 +144,18 @@ struct DocumentView: View {
         }
     }
 
+    private func renderRaw(text: String) async {
+        let url = fileURL
+        let result = await Task.detached(priority: .userInitiated) { () -> RenderedDocument? in
+            var options = RenderOptions()
+            options.title = url?.lastPathComponent ?? "Markdown"
+            return try? MarkdownRenderer().renderDocument(
+                sourceCode: text, language: "plaintext", options: options)
+        }.value
+        // On failure keep showing the current view; renderError would blank the window.
+        if let result { rawDocument = result }
+    }
+
     private func applyCommentsLayout(show: Bool) {
         guard let window else { return }
         var frame = window.frame
@@ -156,6 +191,12 @@ struct DocumentView: View {
         watcher = FileWatcher(url: url) {
             guard let data = try? Data(contentsOf: url) else { return }
             let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+            sourceText = text
+            if showSource {
+                Task { await renderRaw(text: text) }
+            } else {
+                rawDocument = nil
+            }
             Task { await render(text: text) }
         }
     }
