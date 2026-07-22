@@ -13,7 +13,9 @@ Peekaboo is a macOS markdown viewer app with a Quick Look extension. Both render
 ./Scripts/install.sh    # copy built app to /Applications, re-register QL extension, flush QL cache, install `peekaboo` CLI
 ```
 
-`Scripts/peekaboo` is a thin `open -a Peekaboo` wrapper; `install.sh` copies it to `/opt/homebrew/bin/peekaboo` so `peekaboo file.md` opens files in the app.
+`Scripts/peekaboo` is a thin `open -a Peekaboo` wrapper; `install.sh` copies it to `/opt/homebrew/bin` (falling back to `/usr/local/bin`) so `peekaboo file.md` opens files in the app.
+
+When Kyle asks to "install", "publish", or "release" the app "for me" / "to myself" / "here", he means the local install: run `./Scripts/build.sh` + `./Scripts/install.sh` so `/Applications/Peekaboo.app` is the latest build — never an Artifact, GitHub release, or other external distribution.
 
 After any code change, ALWAYS run BOTH `./Scripts/build.sh` then `./Scripts/install.sh` — do not stop at `build.sh` and do not defer `install.sh` to the user. `install.sh` copies the app to `/Applications`, re-registers the Quick Look extension, and flushes the QL cache (`qlmanage -r` / `-r cache`); without it the changes will not show up in the running app or in Quick Look. This is required even though `install.sh` writes to `/Applications` — installing is part of completing a code change here, not an optional follow-up.
 
@@ -37,13 +39,13 @@ Build products go to `/tmp/peekaboo-dd` intentionally: the repo lives in iCloud 
 
 Three layers, dependency flows downward:
 
-1. **`App/Sources/`** — SwiftUI app. `DocumentGroup` opens markdown files (`MarkdownFile.swift`), `DocumentView.swift` renders async, `WebView.swift` wraps WKWebView, `FileWatcher.swift` (GCD dispatch source, 150ms debounce) drives live reload.
+1. **`App/Sources/`** — SwiftUI app. `DocumentGroup` opens markdown files (`MarkdownFile.swift`), `DocumentView.swift` renders async (with a toolbar source-view toggle), `WebView.swift` wraps WKWebView, `FileWatcher.swift` (GCD dispatch source, 150ms debounce) drives live reload. The review-comment sidebar (`CommentStore.swift` + `Comment*.swift`) persists threads to a hidden `.<doc>.review.md` sidecar beside the document; the sidecar format lives in the package's `ReviewFile.swift`.
 2. **`QuickLook/Sources/PreviewProvider.swift`** — sandboxed, read-only QL extension (`QLPreviewProvider`); same renderer, no JavaScript.
 3. **`Packages/MarkdownRenderer/`** — pure rendering engine, UI-free and fully testable. Also builds a `markdown-render-cli` executable for command-line rendering.
 
 ### Rendering pipeline (MarkdownRenderer.swift coordinates)
 
-Markdown text passes through ordered passes before/after cmark-gfm parsing (`CMarkPipeline.swift`): math extraction (`MathExtractor` → KaTeX via MathJaxSwift), YAML front matter (`FrontMatterPass`, Yams), GitHub alerts (`AlertsPass`), emoji shortcodes, heading anchor IDs, local-image base64 inlining. `HTMLTemplate.swift` assembles the final self-contained HTML: GitHub markdown CSS, highlight.js, and KaTeX fonts are all inlined (base64) so no network access is needed — required for the sandboxed QL extension.
+Markdown text passes through ordered passes before/after cmark-gfm parsing (`CMarkPipeline.swift`): math extraction (`MathExtractor` → KaTeX via MathJaxSwift), YAML front matter (`FrontMatterPass`, Yams), GitHub alerts (`AlertsPass`), Obsidian wikilinks (`WikiLinksPass`), emoji shortcodes, heading anchor IDs, local-image base64 inlining. `HTMLTemplate.swift` assembles the final self-contained HTML: GitHub markdown CSS, highlight.js, and KaTeX fonts are all inlined (base64) so no network access is needed — required for the sandboxed QL extension.
 
 ### Constraints to preserve
 

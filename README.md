@@ -40,6 +40,8 @@ cache), and installs the `peekaboo` command-line wrapper. Re-run both after pull
 - **Emoji shortcodes**, **YAML front matter** rendered as a table, and **heading anchor links**
 - **Mermaid diagrams** (app only — see [Under the hood](#under-the-hood))
 - **Live reload** — edit in any editor and the preview updates in ~150 ms, preserving scroll position
+- **Source view** — toolbar toggle between the rendered page and the raw Markdown, plus one-click
+  copy of the source and a Show in Finder button
 - **Light / dark mode** following the system appearance
 - **Review-comment sidebar** for annotating documents
 - **Self-contained output** — local images are inlined as data URIs

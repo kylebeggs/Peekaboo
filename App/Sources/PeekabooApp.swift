@@ -13,7 +13,7 @@ struct PeekabooApp: App {
         DocumentGroup(viewing: MarkdownFile.self) { configuration in
             DocumentView(initialText: configuration.document.text, fileURL: configuration.fileURL)
         }
-        .defaultSize(width: 900, height: 1560)
+        .defaultSize(width: 900, height: 1330)
         .commands {
             CommandGroup(after: .sidebar) {
                 Divider()
