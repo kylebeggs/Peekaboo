@@ -84,16 +84,12 @@ struct DocumentView: View {
                 Label("Zoom In", systemImage: "plus.magnifyingglass")
             }
             .help("Zoom In")
-            Button {
-                showSource.toggle()
-                if showSource && rawDocument == nil {
-                    let text = sourceText
-                    Task { await renderRaw(text: text) }
-                }
-            } label: {
-                Label("Source", systemImage: "chevron.left.forwardslash.chevron.right")
+            Picker("View Mode", selection: $showSource) {
+                Label("Rendered", systemImage: "doc.richtext").tag(false)
+                Label("Source", systemImage: "chevron.left.forwardslash.chevron.right").tag(true)
             }
-            .help(showSource ? "Show rendered markdown" : "Show markdown source")
+            .pickerStyle(.segmented)
+            .help("Switch between rendered and source view")
             if commentsEnabled {
                 Button {
                     showComments.toggle()
@@ -107,6 +103,12 @@ struct DocumentView: View {
             window = resolved
             if let resolved, showComments { fitWindowToComments(resolved) }
         })
+        .onChange(of: showSource) { isSource in
+            if isSource && rawDocument == nil {
+                let text = sourceText
+                Task { await renderRaw(text: text) }
+            }
+        }
         .onChange(of: showComments) { applyCommentsLayout(show: $0) }
         .onChange(of: store.pending) { pending in
             if pending != nil { showComments = true }
