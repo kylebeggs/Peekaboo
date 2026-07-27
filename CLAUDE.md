@@ -1,10 +1,7 @@
-# CLAUDE.md
+# Peekaboo
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## What this is
-
-Peekaboo is a macOS markdown viewer app with a Quick Look extension. Both render markdown through a shared local Swift package, `Packages/MarkdownRenderer`.
+macOS markdown viewer with a Quick Look extension. Both render through a shared local Swift
+package, `Packages/MarkdownRenderer`.
 
 ## Commands
 
