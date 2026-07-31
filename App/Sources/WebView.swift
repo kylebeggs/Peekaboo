@@ -5,6 +5,7 @@ import MarkdownRenderer
 struct WebView: NSViewRepresentable {
     let document: RenderedDocument?
     let fileURL: URL?
+    let fullWidth: Bool
     @ObservedObject var store: CommentStore
     @AppStorage("pageZoom") private var pageZoom = 1.0
 
@@ -37,8 +38,10 @@ struct WebView: NSViewRepresentable {
         webView.pageZoom = pageZoom
         context.coordinator.fileURL = fileURL
         context.coordinator.store = store
+        context.coordinator.fullWidth = fullWidth
         guard let document else { return }
         context.coordinator.show(document, in: webView)
+        context.coordinator.applyWidth(in: webView)
         context.coordinator.syncAnchors()
     }
 
@@ -76,11 +79,27 @@ struct WebView: NSViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var fileURL: URL?
+        var fullWidth = false
         weak var store: CommentStore?
         weak var webView: WKWebView?
         private var loadedOnce = false
         private var lastBody: String?
         private var lastAnchorsJSON: String?
+        private var appliedFullWidth: Bool?
+
+        /// Drops the 980px column cap by toggling a class the stylesheet already carries.
+        ///
+        /// A class beats re-rendering with a width option: the markdown never changes, so a
+        /// re-render would redo math and highlighting for one CSS declaration — and `show`
+        /// early-outs on unchanged `bodyHTML`, so the new stylesheet would never reach the page.
+        /// The class lives on `<body>` itself, which the live-reload `innerHTML` swap leaves
+        /// alone, so it survives file edits and rendered/source switches.
+        func applyWidth(in webView: WKWebView) {
+            guard appliedFullWidth != fullWidth else { return }
+            appliedFullWidth = fullWidth
+            webView.evaluateJavaScript(
+                "document.body.classList.toggle('peekaboo-full-width', \(fullWidth));")
+        }
 
         /// Pushes the open inline anchors to the page for (re)highlighting, skipping
         /// the round-trip when the set is unchanged.
@@ -98,6 +117,11 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             lastAnchorsJSON = nil // page reloaded; force a re-push
+            // Showing or hiding the comments sidebar moves the WebView between two branches of
+            // DocumentView's Group, which can rebuild the web view and reload from scratch. The
+            // fresh page has no class on it, whatever the coordinator last pushed.
+            appliedFullWidth = nil
+            applyWidth(in: webView)
             syncAnchors()
         }
 

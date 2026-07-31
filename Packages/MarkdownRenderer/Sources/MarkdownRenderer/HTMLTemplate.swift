@@ -63,6 +63,8 @@ enum HTMLTemplate {
     body { margin: 0; background-color: #ffffff; }
     @media (prefers-color-scheme: dark) { body { background-color: #0d1117; } }
     .markdown-body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 32px; }
+    /* Inert unless the app puts the class on <body>; the Quick Look extension never does. */
+    .markdown-body.peekaboo-full-width { max-width: none; }
     .peekaboo-notice { padding: 8px 16px; border-radius: 6px; background-color: #fff8c5; color: #57606a; }
     @media (prefers-color-scheme: dark) { .peekaboo-notice { background-color: #3a2d12; color: #8b949e; } }
     .math-error { color: #cf222e; }

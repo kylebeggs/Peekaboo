@@ -508,4 +508,25 @@ final class MarkdownRendererTests: XCTestCase {
         let document = try MarkdownRenderer().renderDocument(markdown: "# Hi")
         XCTAssertFalse(document.css.contains("body { zoom:"), "default options should not emit a zoom rule")
     }
+
+    func testFullWidthOverrideRuleShipsAlongsideTheFixedWidthDefault() throws {
+        let document = try MarkdownRenderer().renderDocument(markdown: "# Hi")
+        XCTAssertTrue(
+            document.css.contains(".markdown-body.peekaboo-full-width { max-width: none; }"),
+            "the app toggles this class on <body>; without the rule the toolbar control does nothing"
+        )
+        XCTAssertTrue(
+            document.css.contains("max-width: 980px"),
+            "the fixed-width column is the default; only the class opts out of it"
+        )
+    }
+
+    /// The class is inert until the app adds it, so Quick Look and the CLI stay fixed-width.
+    func testFullWidthClassIsNotAppliedByTheRenderer() throws {
+        let document = try MarkdownRenderer().renderDocument(markdown: "# Hi")
+        XCTAssertFalse(
+            document.html.contains("<body class=\"markdown-body peekaboo-full-width\""),
+            "the renderer must not opt documents into full width; that is the app's call"
+        )
+    }
 }

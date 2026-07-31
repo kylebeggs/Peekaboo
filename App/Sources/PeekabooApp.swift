@@ -8,6 +8,8 @@ enum Zoom {
 @main
 struct PeekabooApp: App {
     @AppStorage("pageZoom") private var pageZoom = 1.0
+    // Published by whichever DocumentView currently has focus; nil when no document window does.
+    @FocusedValue(\.fullWidth) private var fullWidth: Binding<Bool>?
 
     var body: some Scene {
         DocumentGroup(viewing: MarkdownFile.self) { configuration in
@@ -16,6 +18,10 @@ struct PeekabooApp: App {
         .defaultSize(width: 900, height: 1330)
         .commands {
             CommandGroup(after: .sidebar) {
+                Divider()
+                Toggle("Full Width", isOn: fullWidth ?? .constant(false))
+                    .keyboardShortcut("f", modifiers: [.command, .option])
+                    .disabled(fullWidth == nil)
                 Divider()
                 Button("Zoom In") { pageZoom = Zoom.zoomedIn(pageZoom) }
                     .keyboardShortcut("+", modifiers: .command)

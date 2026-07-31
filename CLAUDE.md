@@ -50,4 +50,4 @@ Markdown text passes through ordered passes before/after cmark-gfm parsing (`CMa
 - **Live reload swaps `<body>` innerHTML** instead of reloading the page, to preserve scroll position. New rendering features that need JS init (like Mermaid) must re-run on body swap — see `WebView.swift`.
 - **FileWatcher re-arms after atomic saves**: editors delete/rename on save, so the watcher waits 250ms and re-opens the file descriptor.
 - **Mermaid is app-only** (JS in WKWebView); the QL extension renders without JavaScript, so JS-dependent features must degrade gracefully there.
-- WKWebView runs with JavaScript minimized — only the Mermaid init hook and body-swap evaluation. Keep it that way.
+- WKWebView runs with JavaScript minimized — only the Mermaid init hook, the body-swap evaluation, and the full-width class toggle (`WebView.applyWidth`). Keep it that way.

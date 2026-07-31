@@ -21,6 +21,9 @@ struct DocumentView: View {
     @State private var document: RenderedDocument?
     @State private var rawDocument: RenderedDocument?
     @State private var showSource = false
+    // Per window, and deliberately not persisted: a document opened fresh starts at the
+    // fixed-width column, and widening one window doesn't reflow every other one.
+    @State private var fullWidth = false
     @State private var sourceText: String
     @State private var renderError: String?
     @State private var watcher: FileWatcher?
@@ -64,7 +67,9 @@ struct DocumentView: View {
                 GeometryReader { geo in
                     let available = geo.size.width - dividerWidth
                     HStack(spacing: 0) {
-                        WebView(document: displayedDocument, fileURL: fileURL, store: store)
+                        WebView(
+                            document: displayedDocument, fileURL: fileURL,
+                            fullWidth: fullWidth, store: store)
                             .frame(width: documentWidth(in: available))
                         splitDivider(available: available)
                         CommentsSidebar(store: store)
@@ -73,7 +78,9 @@ struct DocumentView: View {
                     .coordinateSpace(name: splitSpace)
                 }
             } else {
-                WebView(document: displayedDocument, fileURL: fileURL, store: store)
+                WebView(
+                    document: displayedDocument, fileURL: fileURL,
+                    fullWidth: fullWidth, store: store)
             }
         }
         // A GeometryReader has no intrinsic minimum, so the floor the fixed-width WebView
@@ -113,6 +120,12 @@ struct DocumentView: View {
             }
             .pickerStyle(.segmented)
             .help("Switch between rendered and source view")
+            Picker("Content Width", selection: $fullWidth) {
+                Label("Fixed", systemImage: "arrow.right.and.line.vertical.and.arrow.left").tag(false)
+                Label("Full", systemImage: "arrow.left.and.line.vertical.and.arrow.right").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .help("Switch between a fixed-width column and text that fills the window")
             if commentsEnabled {
                 Button {
                     showComments.toggle()
@@ -122,6 +135,8 @@ struct DocumentView: View {
                 .help(showComments ? "Hide comments" : "Show comments")
             }
         }
+        // Hands the key window's width toggle to the View menu command.
+        .focusedSceneValue(\.fullWidth, $fullWidth)
         .background(WindowAccessor { resolved in
             window = resolved
             if let resolved, showComments { fitWindowToComments(resolved) }
