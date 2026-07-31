@@ -39,7 +39,7 @@ struct CommentsSidebar: View {
                 }
             }
         }
-        .frame(minWidth: 260)
+        .frame(minWidth: minSidebarWidth)
         .background(.background)
     }
 

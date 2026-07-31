@@ -1,8 +1,17 @@
 import SwiftUI
 import MarkdownRenderer
 
-private let minSidebarWidth = 260.0
-private let dividerWidth = 1.0
+let minSidebarWidth = 260.0
+private let minTextPaneWidth = 400.0
+// The divider is a real 6pt strip, not a 1pt rule with an overlay: SwiftUI overlay
+// hit-testing across the NSViewRepresentable-hosted WKWebView is unreliable, so the
+// drag target has to own actual layout width.
+private let dividerWidth = 6.0
+private let defaultSplitFraction = 0.69
+// The drag must be measured against a frame that does not itself move with the drag.
+// A .local DragGesture on the divider oscillates: changing the split moves the divider,
+// which moves the gesture's own reference frame, which changes the next translation.
+private let splitSpace = "peekaboo.split"
 
 struct DocumentView: View {
     let initialText: String
@@ -16,10 +25,18 @@ struct DocumentView: View {
     @State private var renderError: String?
     @State private var watcher: FileWatcher?
     @State private var window: NSWindow?
+    @State private var dragStartDocWidth: Double?
+    // Held in @State during a drag so the split isn't written through UserDefaults on
+    // every frame; committed to `splitFraction` on release.
+    @State private var liveFraction: Double?
+    @State private var isHoveringDivider = false
     @AppStorage("pageZoom") private var pageZoom = 1.0
     @AppStorage("showCommentsPanel") private var showComments = false
+    // The live split is a fraction of the content width, so both panes scale together
+    // when the window is resized. `textPaneWidth` is the last known absolute document
+    // width, used only by the show/hide window math and the too-narrow-on-reopen fixup.
+    @AppStorage("commentsSplitFraction") private var splitFraction = defaultSplitFraction
     @AppStorage("commentsTextPaneWidth") private var textPaneWidth = 900.0
-    @AppStorage("commentsSidebarWidth") private var sidebarWidth = 400.0
 
     init(initialText: String, fileURL: URL?) {
         self.initialText = initialText
@@ -44,18 +61,24 @@ struct DocumentView: View {
                 }
                 .padding()
             } else if commentsEnabled && showComments {
-                HStack(spacing: 0) {
-                    WebView(document: displayedDocument, fileURL: fileURL, store: store)
-                        .frame(width: textPaneWidth)
-                    Divider()
-                    CommentsSidebar(store: store)
-                        .frame(minWidth: minSidebarWidth)
+                GeometryReader { geo in
+                    let available = geo.size.width - dividerWidth
+                    HStack(spacing: 0) {
+                        WebView(document: displayedDocument, fileURL: fileURL, store: store)
+                            .frame(width: documentWidth(in: available))
+                        splitDivider(available: available)
+                        CommentsSidebar(store: store)
+                            .frame(minWidth: minSidebarWidth)
+                    }
+                    .coordinateSpace(name: splitSpace)
                 }
             } else {
                 WebView(document: displayedDocument, fileURL: fileURL, store: store)
             }
         }
-        .frame(minWidth: 480, minHeight: 320)
+        // A GeometryReader has no intrinsic minimum, so the floor the fixed-width WebView
+        // used to propagate up through the HStack has to be stated explicitly.
+        .frame(minWidth: commentsEnabled && showComments ? minSplitWidth : 480, minHeight: 320)
         .toolbar {
             if let fileURL {
                 Button {
@@ -122,6 +145,51 @@ struct DocumentView: View {
         }
     }
 
+    private var minSplitWidth: Double { minTextPaneWidth + dividerWidth + minSidebarWidth }
+
+    /// The document pane's width for a given content width, clamped so neither pane can
+    /// be crushed past its minimum. Rounded to whole points — a fractional width makes
+    /// the WebView relayout on subpixel changes, which reads as jitter while dragging.
+    private func documentWidth(in available: Double) -> Double {
+        let ceiling = max(minTextPaneWidth, available - minSidebarWidth)
+        return min(max((liveFraction ?? splitFraction) * available, minTextPaneWidth), ceiling)
+            .rounded()
+    }
+
+    /// A 1pt separator centred in a 6pt drag strip. Drag moves the split, double-click
+    /// resets it; `minimumDistance: 1` lets the tap through.
+    private func splitDivider(available: Double) -> some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .frame(width: dividerWidth)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                guard inside != isHoveringDivider else { return }
+                isHoveringDivider = inside
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .named(splitSpace))
+                    .onChanged { value in
+                        let start = dragStartDocWidth ?? documentWidth(in: available)
+                        if dragStartDocWidth == nil { dragStartDocWidth = start }
+                        let ceiling = max(minTextPaneWidth, available - minSidebarWidth)
+                        let target = min(max(start + value.translation.width, minTextPaneWidth), ceiling)
+                        liveFraction = target / available
+                    }
+                    .onEnded { _ in
+                        dragStartDocWidth = nil
+                        if let liveFraction { splitFraction = liveFraction }
+                        liveFraction = nil
+                        textPaneWidth = documentWidth(in: available)
+                    })
+            .onTapGesture(count: 2) {
+                splitFraction = defaultSplitFraction
+                textPaneWidth = documentWidth(in: available)
+            }
+    }
+
     private func render(text: String) async {
         let url = fileURL
         let result = await Task.detached(priority: .userInitiated) { () -> Result<RenderedDocument, Error> in
@@ -158,28 +226,34 @@ struct DocumentView: View {
         if let result { rawDocument = result }
     }
 
+    // Grow/shrink the window so the document pane keeps its width across a toggle. The two
+    // branches are exact inverses, so hiding and re-showing lands on the same split.
     private func applyCommentsLayout(show: Bool) {
         guard let window else { return }
         var frame = window.frame
         if show {
             textPaneWidth = frame.width
-            frame.size.width = textPaneWidth + dividerWidth + sidebarWidth
+            frame.size.width = max(minSplitWidth, windowWidth(forDocumentWidth: frame.width))
         } else {
-            sidebarWidth = max(minSidebarWidth, frame.width - dividerWidth - textPaneWidth)
+            textPaneWidth = max(minTextPaneWidth, splitFraction * (frame.width - dividerWidth))
             frame.size.width = textPaneWidth
         }
         constrainToScreen(&frame, in: window)
         window.setFrame(frame, display: true, animate: false)
     }
 
-    // On reopen, a window restored too narrow for the pinned text width clips the WebView.
-    // Grow it to fit; leave already-wide windows alone so a manual resize survives.
+    // On reopen, a window restored too narrow for the remembered text width squeezes the
+    // WebView. Grow it to fit; leave already-wide windows alone so a manual resize survives.
     private func fitWindowToComments(_ window: NSWindow) {
         guard window.frame.width < textPaneWidth + dividerWidth + minSidebarWidth else { return }
         var frame = window.frame
-        frame.size.width = textPaneWidth + dividerWidth + sidebarWidth
+        frame.size.width = max(minSplitWidth, windowWidth(forDocumentWidth: textPaneWidth))
         constrainToScreen(&frame, in: window)
         window.setFrame(frame, display: true)
+    }
+
+    private func windowWidth(forDocumentWidth width: Double) -> Double {
+        width / max(splitFraction, 0.1) + dividerWidth
     }
 
     private func constrainToScreen(_ frame: inout NSRect, in window: NSWindow) {
