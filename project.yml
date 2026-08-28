@@ -38,6 +38,10 @@ targets:
         CFBundleDisplayName: Peekaboo
         LSApplicationCategoryType: public.app-category.productivity
         CFBundleDocumentTypes:
+          # Viewer on purpose, even though the app can edit: declaring Editor makes the
+          # DocumentGroup(viewing:) scene grow the real File > Save chain, which routes
+          # ⌘S into NSDocument — whose snapshot is always stale next to our direct-write
+          # autosave, so every save raises the "changed by another application" sheet.
           - CFBundleTypeName: Markdown Document
             CFBundleTypeRole: Viewer
             CFBundleTypeIconFile: MarkdownDocument

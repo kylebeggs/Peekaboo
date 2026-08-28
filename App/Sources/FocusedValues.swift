@@ -15,3 +15,20 @@ extension FocusedValues {
         set { self[FullWidthKey.self] = newValue }
     }
 }
+
+/// The key window's "flush pending autosave now" action, for File > Save (⌘S).
+/// An action struct rather than a Binding: Save is a verb, not state to observe.
+struct SaveDocumentKey: FocusedValueKey {
+    typealias Value = SaveDocumentAction
+}
+
+struct SaveDocumentAction {
+    let save: () -> Void
+}
+
+extension FocusedValues {
+    var saveDocument: SaveDocumentAction? {
+        get { self[SaveDocumentKey.self] }
+        set { self[SaveDocumentKey.self] = newValue }
+    }
+}
