@@ -7,7 +7,12 @@ private let minTextPaneWidth = 400.0
 // hit-testing across the NSViewRepresentable-hosted WKWebView is unreliable, so the
 // drag target has to own actual layout width.
 private let dividerWidth = 6.0
-private let defaultSplitFraction = 0.69
+private let defaultSidebarWidth = 410.0
+private let defaultDocumentWidth = 920.0
+// AppKit restores the previous document window's frame and ignores the scene's
+// `defaultSize`, so this is only the width of the very first window ever opened;
+// `fitWindowToComments` re-grows a restored frame that is too narrow for the panes.
+let defaultWindowWidth = defaultDocumentWidth + dividerWidth + defaultSidebarWidth
 // The drag must be measured against a frame that does not itself move with the drag.
 // A .local DragGesture on the divider oscillates: changing the split moves the divider,
 // which moves the gesture's own reference frame, which changes the next translation.
@@ -34,16 +39,16 @@ struct DocumentView: View {
     @State private var window: NSWindow?
     @State private var dragStartDocWidth: Double?
     // Held in @State during a drag so the split isn't written through UserDefaults on
-    // every frame; committed to `splitFraction` on release.
-    @State private var liveFraction: Double?
+    // every frame; committed to `sidebarWidth` on release.
+    @State private var liveSidebarWidth: Double?
     @State private var isHoveringDivider = false
     @AppStorage("pageZoom") private var pageZoom = 1.0
     @AppStorage("showCommentsPanel") private var showComments = false
-    // The live split is a fraction of the content width, so both panes scale together
-    // when the window is resized. `textPaneWidth` is the last known absolute document
+    // The comments pane keeps an absolute width, so a wider window widens the document
+    // and leaves the sidebar alone. `textPaneWidth` is the last known absolute document
     // width, used only by the show/hide window math and the too-narrow-on-reopen fixup.
-    @AppStorage("commentsSplitFraction") private var splitFraction = defaultSplitFraction
-    @AppStorage("commentsTextPaneWidth") private var textPaneWidth = 900.0
+    @AppStorage("commentsPaneWidth") private var sidebarWidth = defaultSidebarWidth
+    @AppStorage("commentsTextPaneWidth") private var textPaneWidth = defaultDocumentWidth
 
     init(initialText: String, fileURL: URL?) {
         self.initialText = initialText
@@ -186,7 +191,7 @@ struct DocumentView: View {
     /// the WebView relayout on subpixel changes, which reads as jitter while dragging.
     private func documentWidth(in available: Double) -> Double {
         let ceiling = max(minTextPaneWidth, available - minSidebarWidth)
-        return min(max((liveFraction ?? splitFraction) * available, minTextPaneWidth), ceiling)
+        return min(max(available - (liveSidebarWidth ?? sidebarWidth), minTextPaneWidth), ceiling)
             .rounded()
     }
 
@@ -210,16 +215,16 @@ struct DocumentView: View {
                         if dragStartDocWidth == nil { dragStartDocWidth = start }
                         let ceiling = max(minTextPaneWidth, available - minSidebarWidth)
                         let target = min(max(start + value.translation.width, minTextPaneWidth), ceiling)
-                        liveFraction = target / available
+                        liveSidebarWidth = available - target
                     }
                     .onEnded { _ in
                         dragStartDocWidth = nil
-                        if let liveFraction { splitFraction = liveFraction }
-                        liveFraction = nil
+                        if let liveSidebarWidth { sidebarWidth = liveSidebarWidth }
+                        liveSidebarWidth = nil
                         textPaneWidth = documentWidth(in: available)
                     })
             .onTapGesture(count: 2) {
-                splitFraction = defaultSplitFraction
+                sidebarWidth = defaultSidebarWidth
                 textPaneWidth = documentWidth(in: available)
             }
     }
@@ -291,7 +296,7 @@ struct DocumentView: View {
             textPaneWidth = frame.width
             frame.size.width = max(minSplitWidth, windowWidth(forDocumentWidth: frame.width))
         } else {
-            textPaneWidth = max(minTextPaneWidth, splitFraction * (frame.width - dividerWidth))
+            textPaneWidth = max(minTextPaneWidth, frame.width - dividerWidth - sidebarWidth)
             frame.size.width = textPaneWidth
         }
         constrainToScreen(&frame, in: window)
@@ -309,7 +314,7 @@ struct DocumentView: View {
     }
 
     private func windowWidth(forDocumentWidth width: Double) -> Double {
-        width / max(splitFraction, 0.1) + dividerWidth
+        width + dividerWidth + sidebarWidth
     }
 
     private func constrainToScreen(_ frame: inout NSRect, in window: NSWindow) {
