@@ -7,12 +7,20 @@ enum MathRenderer {
     )
 
     /// Single pass over the HTML: each placeholder token (display tokens together
-    /// with their wrapping `<p>`) is swapped for its rendered math.
+    /// with their wrapping `<p>`) is swapped for its rendered math. Identical
+    /// segments are rendered once per document.
     static func substitute(registry: MathRegistry, in html: String, allowMathJaxFallback: Bool) -> String {
         guard !registry.isEmpty else { return html }
         var rendered: [String: String] = [:]
+        var renderedBySegment: [MathRegistry.Segment: String] = [:]
         for (token, segment) in registry.segments {
-            rendered[token] = render(segment, allowMathJaxFallback: allowMathJaxFallback)
+            if let segmentHTML = renderedBySegment[segment] {
+                rendered[token] = segmentHTML
+                continue
+            }
+            let segmentHTML = render(segment, allowMathJaxFallback: allowMathJaxFallback)
+            renderedBySegment[segment] = segmentHTML
+            rendered[token] = segmentHTML
         }
 
         let ns = html as NSString

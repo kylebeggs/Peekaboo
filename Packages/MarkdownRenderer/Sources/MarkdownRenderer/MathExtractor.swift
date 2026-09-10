@@ -1,7 +1,7 @@
 import Foundation
 
 public final class MathRegistry {
-    struct Segment {
+    struct Segment: Hashable {
         let tex: String
         let display: Bool
     }
