@@ -64,16 +64,19 @@ public struct MarkdownRenderer {
         var source = markdown
         if source.hasPrefix("\u{FEFF}") { source.removeFirst() }
 
+        // Gate on the original size so front matter cannot shrink a document under the limit.
+        let oversized = source.utf8.count > Self.expensivePassByteLimit
+
         var frontMatterHTML = ""
-        if let frontMatter = FrontMatterPass.split(source: source) {
+        if !oversized, let frontMatter = FrontMatterPass.split(source: source) {
             frontMatterHTML = frontMatter.html
             source = frontMatter.remainder
         }
 
-        let oversized = source.utf8.count > Self.expensivePassByteLimit
         let math = MathRegistry()
         let extracted = oversized ? source : MathExtractor.extract(from: source, into: math)
-        var body = try CMarkPipeline.render(markdown: extracted, math: math, highlightCode: !oversized)
+        var body = try CMarkPipeline.render(markdown: extracted, math: math,
+                                            highlightCode: !oversized, mathEnabled: !oversized)
         if oversized {
             body = "<p class=\"peekaboo-notice\">Large document — math and syntax highlighting disabled.</p>\n" + body
         }

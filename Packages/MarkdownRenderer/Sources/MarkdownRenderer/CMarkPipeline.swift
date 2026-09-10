@@ -15,7 +15,10 @@ enum CMarkOptions {
 enum CMarkPipeline {
     private static let extensionNames = ["table", "strikethrough", "autolink", "tasklist"]
 
-    static func render(markdown: String, math: MathRegistry, highlightCode: Bool = true) throws -> String {
+    /// `mathEnabled` controls whether fenced ```math blocks are registered for
+    /// KaTeX; when false they render as ordinary code blocks.
+    static func render(markdown: String, math: MathRegistry, highlightCode: Bool = true,
+                       mathEnabled: Bool = true) throws -> String {
         cmark_gfm_core_extensions_ensure_registered()
         guard let parser = cmark_parser_new(CMarkOptions.all) else { throw RenderError.parserCreationFailed }
         defer { cmark_parser_free(parser) }
@@ -29,7 +32,7 @@ enum CMarkPipeline {
         guard let doc = cmark_parser_finish(parser) else { throw RenderError.parseFailed }
         defer { cmark_node_free(doc) }
 
-        transform(doc: doc, math: math, highlightCode: highlightCode,
+        transform(doc: doc, math: math, highlightCode: highlightCode, mathEnabled: mathEnabled,
                   extensions: cmark_parser_get_syntax_extensions(parser))
 
         guard let cHTML = cmark_render_html(doc, CMarkOptions.all, cmark_parser_get_syntax_extensions(parser)) else {
@@ -39,7 +42,7 @@ enum CMarkPipeline {
         return String(cString: cHTML)
     }
 
-    private static func transform(doc: CMarkNode, math: MathRegistry, highlightCode: Bool,
+    private static func transform(doc: CMarkNode, math: MathRegistry, highlightCode: Bool, mathEnabled: Bool,
                                   extensions: UnsafeMutablePointer<cmark_llist>?) {
         var codeBlocks: [CMarkNode] = []
         var blockquotes: [CMarkNode] = []
@@ -61,16 +64,19 @@ enum CMarkPipeline {
 
         // Mutations happen after iteration completes; the iterator must not see a changing tree.
         for blockquote in blockquotes { AlertsPass.transform(blockquote: blockquote, extensions: extensions) }
-        for codeBlock in codeBlocks { transformCodeBlock(codeBlock, math: math, highlightCode: highlightCode) }
+        for codeBlock in codeBlocks {
+            transformCodeBlock(codeBlock, math: math, highlightCode: highlightCode, mathEnabled: mathEnabled)
+        }
     }
 
-    private static func transformCodeBlock(_ node: CMarkNode, math: MathRegistry, highlightCode: Bool) {
+    private static func transformCodeBlock(_ node: CMarkNode, math: MathRegistry, highlightCode: Bool, mathEnabled: Bool) {
         let info = cmark_node_get_fence_info(node).map { String(cString: $0) } ?? ""
         let language = info.split(separator: " ").first.map { $0.lowercased() } ?? ""
         guard let cLiteral = cmark_node_get_literal(node) else { return }
         let literal = String(cString: cLiteral)
 
         if language == "math" {
+            guard mathEnabled else { return }
             let token = math.register(tex: literal.trimmingCharacters(in: .whitespacesAndNewlines), display: true)
             replace(node, withHTML: "<p>\(token)</p>")
             return
