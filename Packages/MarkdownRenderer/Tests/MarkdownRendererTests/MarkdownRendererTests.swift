@@ -492,6 +492,45 @@ final class MarkdownRendererTests: XCTestCase {
         XCTAssertFalse(html.contains("class=\"hljs"), "highlighting should be skipped for oversized docs")
     }
 
+    func testOversizedDocumentLeavesMathFenceAsCode() throws {
+        let filler = String(repeating: "Lorem ipsum dolor sit amet. ", count: 80_000)
+        let markdown = "# Big\n\n```math\n\\sum_{i=1}^{n} \\Upsilon_i\n```\n\n" + filler
+        XCTAssertGreaterThan(markdown.utf8.count, MarkdownRenderer.expensivePassByteLimit)
+        let callsBefore = JSEngine.shared.bridgeCallCount
+        let document = try MarkdownRenderer().renderDocument(markdown: markdown)
+        let html = document.bodyHTML
+        print("oversized math fence: \(markdown.utf8.count) bytes in, \(JSEngine.shared.bridgeCallCount - callsBefore) bridge calls")
+        XCTAssertTrue(html.contains("peekaboo-notice"), "expected the large-document notice, got prefix:\n\(html.prefix(300))")
+        XCTAssertFalse(html.contains("class=\"katex\""), "fenced math must not reach KaTeX for oversized docs")
+        XCTAssertTrue(html.contains("language-math"), "the fence should survive as a plain code block:\n\(html.prefix(600))")
+        XCTAssertEqual(JSEngine.shared.bridgeCallCount, callsBefore, "oversized docs must not touch the JS bridge")
+        XCTAssertFalse(document.css.contains("KaTeX_AMS"), "KaTeX CSS should be omitted when math is skipped")
+    }
+
+    func testOversizedDocumentSkipsFrontMatter() throws {
+        let filler = String(repeating: "Lorem ipsum dolor sit amet. ", count: 80_000)
+        let markdown = "---\ntitle: Big\ntags: [a, b]\n---\n\n# Big\n\n" + filler
+        XCTAssertGreaterThan(markdown.utf8.count, MarkdownRenderer.expensivePassByteLimit)
+        let html = try render(markdown)
+        XCTAssertTrue(html.contains("peekaboo-notice"), "expected the large-document notice")
+        XCTAssertFalse(html.contains("class=\"frontmatter\""), "front matter table should be skipped for oversized docs")
+        XCTAssertTrue(html.contains("Big"), html.prefix(300).description)
+    }
+
+    func testFrontMatterDoesNotShrinkDocumentUnderTheLimit() throws {
+        // A document just over the limit stays "oversized" even though stripping
+        // its front matter would bring the remainder under it.
+        let limit = MarkdownRenderer.expensivePassByteLimit
+        let frontMatter = "---\nnote: " + String(repeating: "y", count: 4096) + "\n---\n"
+        let body = "# Edge\n\n$\\Psi_{edge}$\n\n" + String(repeating: "z", count: limit - 2048)
+        let markdown = frontMatter + body
+        XCTAssertGreaterThan(markdown.utf8.count, limit)
+        XCTAssertLessThan(body.utf8.count, limit)
+        let html = try render(markdown)
+        XCTAssertTrue(html.contains("peekaboo-notice"), "gate must use the original byte count")
+        XCTAssertFalse(html.contains("class=\"katex\""), "math must stay disabled")
+    }
+
     func testNoMathMeansNoKaTeXCSS() throws {
         let document = try MarkdownRenderer().renderDocument(markdown: "plain text only")
         XCTAssertFalse(document.css.contains("KaTeX_AMS"), "KaTeX CSS should be omitted without math")
