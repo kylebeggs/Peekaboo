@@ -117,8 +117,13 @@ enum AlertsPass {
             openerHTML = "<details class=\"markdown-alert markdown-alert-\(mapping.style)\"\(openAttribute)><summary class=\"markdown-alert-title\">\(titleHTML)</summary>\n"
             closerHTML = "</details>\n"
         }
-        guard let opener = CMarkPipeline.htmlBlock(openerHTML),
-              let closer = CMarkPipeline.htmlBlock(closerHTML) else { return }
+        guard let opener = CMarkPipeline.htmlBlock(openerHTML) else { return }
+        // The opener is detached until it is inserted below, so bailing out here
+        // has to free it; the blockquote stays as it is and renders unwrapped.
+        guard let closer = CMarkPipeline.htmlBlock(closerHTML) else {
+            cmark_node_free(opener)
+            return
+        }
 
         cmark_node_insert_before(blockquote, opener)
         while let child = cmark_node_first_child(blockquote) {
