@@ -215,14 +215,23 @@ enum CommentBridge {
           clearHighlights();
           var outdated = [], resolved = [];
           var list = this.lastAnchors || [];
+          // One index for the whole pass: every anchor is located first, then wrapped from
+          // the highest offset down, so splitting a text node never shifts an offset that
+          // is still to be used. Rebuilding the index per anchor was O(anchors × document).
+          var index = buildIndex();
+          var found = [];
           for (var i = 0; i < list.length; i++) {
             var a = list[i];
-            var index = buildIndex();
             var pos = findMatch(index.text, a);
-            if (pos < 0 || !wrap(index, pos, pos + a.quote.length, a.id, a.resolved)) {
-              outdated.push(a.id);
+            if (pos < 0) { outdated.push(a.id); } else { found.push({ anchor: a, pos: pos }); }
+          }
+          found.sort(function(x, y) { return y.pos - x.pos; });
+          for (var j = 0; j < found.length; j++) {
+            var f = found[j];
+            if (wrap(index, f.pos, f.pos + f.anchor.quote.length, f.anchor.id, f.anchor.resolved)) {
+              resolved.push({ id: f.anchor.id, pos: f.pos });
             } else {
-              resolved.push({ id: a.id, pos: pos });
+              outdated.push(f.anchor.id);
             }
           }
           resolved.sort(function(x, y) { return x.pos - y.pos; });

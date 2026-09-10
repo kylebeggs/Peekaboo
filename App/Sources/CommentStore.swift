@@ -109,9 +109,13 @@ final class CommentStore: ObservableObject {
 
     // MARK: - Web-view callbacks
 
+    /// Called after every body swap; assigns only on change so an unchanged reload does
+    /// not republish and rebuild every card in the sidebar.
     func setOutdated(_ ids: [String], order: [String]) {
-        outdatedIDs = Set(ids)
-        inlineDocumentOrder = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        let outdated = Set(ids)
+        if outdated != outdatedIDs { outdatedIDs = outdated }
+        let documentOrder = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        if documentOrder != inlineDocumentOrder { inlineDocumentOrder = documentOrder }
     }
 
     func selectThread(_ id: String) {

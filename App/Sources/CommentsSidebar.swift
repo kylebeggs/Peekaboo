@@ -117,8 +117,11 @@ struct CommentsSidebar: View {
     }
 }
 
+// Cards hold the store without observing it: their inputs are the thread and the two flags,
+// so a store publish (selection, outdated set, document order) re-evaluates only the cards
+// whose inputs actually changed instead of every card in the sidebar.
 private struct ThreadCard: View {
-    @ObservedObject var store: CommentStore
+    let store: CommentStore
     let thread: CommentThread
     let isSelected: Bool
     let isOutdated: Bool
@@ -228,7 +231,7 @@ private struct QuoteView: View {
 }
 
 private struct MessageView: View {
-    @ObservedObject var store: CommentStore
+    let store: CommentStore
     let threadID: String
     let index: Int
     let message: CommentMessage

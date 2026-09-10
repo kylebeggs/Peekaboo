@@ -11,10 +11,7 @@ struct CommentBodyView: View {
     var body: some View {
         if CommentMarkdown.needsWebRendering(text) {
             RichCommentBody(text: text, cache: cache)
-        } else if let attributed = try? AttributedString(
-            markdown: text,
-            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
+        } else if let attributed = cache.attributedBody(for: text) {
             Text(attributed).font(.callout).textSelection(.enabled)
         } else {
             Text(text).font(.callout).textSelection(.enabled)
