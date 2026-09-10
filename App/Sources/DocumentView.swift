@@ -78,20 +78,24 @@ struct DocumentView: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding()
-            } else if commentsEnabled && showComments {
+            } else {
+                // One structural position for the web view whether or not the sidebar is
+                // shown: a separate branch per layout gave it a new identity on every
+                // toggle, which rebuilt the WKWebView and reloaded the page from scratch.
                 GeometryReader { geo in
                     let available = geo.size.width - dividerWidth
+                    let sidebarShown = commentsEnabled && showComments
                     HStack(spacing: 0) {
                         contentView
-                            .frame(width: documentWidth(in: available))
-                        splitDivider(available: available)
-                        CommentsSidebar(store: store)
-                            .frame(minWidth: minSidebarWidth)
+                            .frame(width: sidebarShown ? documentWidth(in: available) : geo.size.width)
+                        if sidebarShown {
+                            splitDivider(available: available)
+                            CommentsSidebar(store: store)
+                                .frame(minWidth: minSidebarWidth)
+                        }
                     }
                     .coordinateSpace(name: splitSpace)
                 }
-            } else {
-                contentView
             }
         }
         // A GeometryReader has no intrinsic minimum, so the floor the fixed-width WebView
