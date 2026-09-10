@@ -61,23 +61,61 @@ enum MathRenderer {
 /// MathJax fallback for expressions KaTeX cannot parse. MathJaxSwift owns its own
 /// JSContext; initialized lazily on the first KaTeX ParseError so most documents
 /// never pay its memory cost (matters under the Quick Look extension memory cap).
+///
+/// Conversions are memoised in a byte-bounded LRU: MathJax is an order of magnitude
+/// slower than KaTeX, and a live reload re-renders every segment. Failures are cached
+/// too — for a given input the converter is deterministic.
 final class MathJaxRenderer {
     static let shared = MathJaxRenderer()
+    static let defaultCacheEntryLimit = 256
+    static let defaultCacheByteLimit = 2 * 1024 * 1024
+
+    struct CacheStatistics {
+        let entries: Int
+        let bytes: Int
+    }
+
+    private struct CacheKey: Hashable {
+        let tex: String
+        let display: Bool
+    }
 
     private let queue = DispatchQueue(label: "com.kylebeggs.peekaboo.mathjax")
+    private let cache: LRUCache<CacheKey, String?>
     private var mathjax: MathJax?
     private var initAttempted = false
+    private var conversions = 0
 
-    private init() {}
+    init(cacheEntryLimit: Int = MathJaxRenderer.defaultCacheEntryLimit,
+         cacheByteLimit: Int = MathJaxRenderer.defaultCacheByteLimit) {
+        cache = LRUCache(entryLimit: cacheEntryLimit, byteLimit: cacheByteLimit)
+    }
+
+    /// Number of calls that reached MathJax, i.e. cache misses.
+    var conversionCount: Int { queue.sync { conversions } }
+
+    var cacheStatistics: CacheStatistics {
+        queue.sync { CacheStatistics(entries: cache.count, bytes: cache.totalBytes) }
+    }
 
     func tex2svg(_ tex: String, display: Bool) -> String? {
         queue.sync { () -> String? in
-            if !initAttempted {
-                initAttempted = true
-                mathjax = try? MathJax(preferredOutputFormat: .svg)
-            }
-            guard let mathjax else { return nil }
-            return try? mathjax.tex2svg(tex, conversionOptions: ConversionOptions(display: display))
+            let key = CacheKey(tex: tex, display: display)
+            if let cached = cache.value(forKey: key) { return cached }
+            let svg = autoreleasepool { convert(tex: tex, display: display) }
+            cache.insert(svg, forKey: key, cost: tex.utf8.count + (svg?.utf8.count ?? 0))
+            return svg
         }
+    }
+
+    /// Runs on `queue`.
+    private func convert(tex: String, display: Bool) -> String? {
+        conversions += 1
+        if !initAttempted {
+            initAttempted = true
+            mathjax = try? MathJax(preferredOutputFormat: .svg)
+        }
+        guard let mathjax else { return nil }
+        return try? mathjax.tex2svg(tex, conversionOptions: ConversionOptions(display: display))
     }
 }
