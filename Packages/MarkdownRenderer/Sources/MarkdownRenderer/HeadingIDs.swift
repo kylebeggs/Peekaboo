@@ -9,29 +9,16 @@ enum HeadingIDs {
     private static let tagPattern = try! NSRegularExpression(pattern: "<[^>]+>")
 
     static func addAnchors(to html: String) -> String {
-        let ns = html as NSString
-        let matches = pattern.matches(in: html, range: NSRange(location: 0, length: ns.length))
-        guard !matches.isEmpty else { return html }
-
-        var result = html
         var seen: [String: Int] = [:]
-        var replacements: [(NSRange, String)] = []
-
-        for match in matches {
+        return RegexSplicer.replacingMatches(of: pattern, in: html) { match, ns in
             let level = ns.substring(with: match.range(at: 1))
             let inner = ns.substring(with: match.range(at: 2))
             var slug = slugify(inner)
             let count = seen[slug, default: 0]
             seen[slug] = count + 1
             if count > 0 { slug += "-\(count)" }
-            replacements.append((match.range, "<h\(level) id=\"\(slug)\">\(inner)</h\(level)>"))
+            return "<h\(level) id=\"\(slug)\">\(inner)</h\(level)>"
         }
-        for (range, replacement) in replacements.reversed() {
-            if let swiftRange = Range(range, in: result) {
-                result.replaceSubrange(swiftRange, with: replacement)
-            }
-        }
-        return result
     }
 
     /// Duplicate headings get `-1`, `-2`, … suffixes in addAnchors; a bare

@@ -21,27 +21,18 @@ enum WikiLinksPass {
     static func transform(html: String) -> String {
         guard html.contains("[[") else { return html }
         let ns = html as NSString
-        let all = NSRange(location: 0, length: ns.length)
-        let protectedRanges = protectedPattern.matches(in: html, range: all).map(\.range)
-        let matches = pattern.matches(in: html, range: all)
-        guard !matches.isEmpty else { return html }
+        let protectedRanges = protectedPattern.matches(
+            in: html, range: NSRange(location: 0, length: ns.length)).map(\.range)
 
-        var result = html
-        for match in matches.reversed() {
+        return RegexSplicer.replacingMatches(of: pattern, in: html) { match, ns in
             // Skip only when a delimiter sits inside protected content: rendered
             // math (with its <annotation>) may legitimately appear between them.
             let endpoints = [match.range.location, NSMaxRange(match.range) - 1]
             guard !protectedRanges.contains(where: { range in
-                      endpoints.contains { NSLocationInRange($0, range) }
-                  }),
-                  let replacement = render(
-                      inner: ns.substring(with: match.range(at: 2)),
-                      isEmbed: match.range(at: 1).length > 0
-                  ),
-                  let range = Range(match.range, in: result) else { continue }
-            result.replaceSubrange(range, with: replacement)
+                endpoints.contains { NSLocationInRange($0, range) }
+            }) else { return nil }
+            return render(inner: ns.substring(with: match.range(at: 2)), isEmbed: match.range(at: 1).length > 0)
         }
-        return result
     }
 
     /// `inner` is the entity-escaped text between the brackets.
