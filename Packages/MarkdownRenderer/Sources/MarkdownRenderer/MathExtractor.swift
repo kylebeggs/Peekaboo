@@ -233,6 +233,10 @@ enum MathExtractor {
         var result = ""
         result.reserveCapacity(chars.count)
         var k = 0
+        // Once one scan has walked the rest of the line without finding a closer,
+        // no later `$` can find one either — its candidates are a subset. Without
+        // this a line of dollar amounts costs a fresh scan per `$`.
+        var inlineCloseExhausted = false
 
         while k < chars.count {
             let char = chars[k]
@@ -268,11 +272,18 @@ enum MathExtractor {
                     k += 2
                     continue
                 }
-                if let close = findInlineClose(chars, open: k) {
-                    let tex = String(chars[(k + 1)..<close])
-                    result += registry.register(tex: tex, display: false)
-                    k = close + 1
-                    continue
+                if !inlineCloseExhausted {
+                    switch findInlineClose(chars, open: k) {
+                    case .found(let close):
+                        let tex = String(chars[(k + 1)..<close])
+                        result += registry.register(tex: tex, display: false)
+                        k = close + 1
+                        continue
+                    case .exhausted:
+                        inlineCloseExhausted = true
+                    case .cannotOpen:
+                        break
+                    }
                 }
                 result += "$"
                 k += 1
@@ -328,10 +339,18 @@ enum MathExtractor {
 
     /// GitHub-style guards: opener not followed by whitespace or `$`; closer not
     /// preceded by whitespace or backslash, and not immediately followed by a digit.
-    private static func findInlineClose(_ chars: [Character], open: Int) -> Int? {
-        guard open + 1 < chars.count else { return nil }
+    private enum InlineClose {
+        case found(Int)
+        /// This `$` cannot open a segment; a later one on the line still might.
+        case cannotOpen
+        /// The rest of the line holds no closer, for this `$` or any after it.
+        case exhausted
+    }
+
+    private static func findInlineClose(_ chars: [Character], open: Int) -> InlineClose {
+        guard open + 1 < chars.count else { return .cannotOpen }
         let next = chars[open + 1]
-        guard !next.isWhitespace, next != "$" else { return nil }
+        guard !next.isWhitespace, next != "$" else { return .cannotOpen }
 
         var j = open + 1
         while j < chars.count {
@@ -339,11 +358,11 @@ enum MathExtractor {
                 let before = chars[j - 1]
                 let afterIsDigit = j + 1 < chars.count && chars[j + 1].isNumber
                 if !before.isWhitespace, before != "\\", !afterIsDigit, j > open + 1 {
-                    return j
+                    return .found(j)
                 }
             }
             j += 1
         }
-        return nil
+        return .exhausted
     }
 }
