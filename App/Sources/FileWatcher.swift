@@ -7,6 +7,7 @@ final class FileWatcher {
     private let onChange: () -> Void
     private var source: DispatchSourceFileSystemObject?
     private var pending: DispatchWorkItem?
+    private var stopped = false
 
     init?(url: URL, onChange: @escaping () -> Void) {
         self.url = url
@@ -15,10 +16,21 @@ final class FileWatcher {
     }
 
     deinit {
+        stop()
+    }
+
+    /// Cancels the source, any debounced callback, and any scheduled re-arm. Idempotent;
+    /// safe from `deinit`. The descriptor closes in the source's cancel handler.
+    func stop() {
+        stopped = true
+        pending?.cancel()
+        pending = nil
         source?.cancel()
+        source = nil
     }
 
     private func arm() -> Bool {
+        guard !stopped else { return false }
         let descriptor = open(url.path, O_EVTONLY)
         guard descriptor >= 0 else { return false }
 

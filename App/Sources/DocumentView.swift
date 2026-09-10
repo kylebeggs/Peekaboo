@@ -19,24 +19,17 @@ let defaultWindowWidth = defaultDocumentWidth + dividerWidth + defaultSidebarWid
 private let splitSpace = "peekaboo.split"
 
 struct DocumentView: View {
-    let initialText: String
     let fileURL: URL?
 
     @StateObject private var store: CommentStore
-    @State private var document: RenderedDocument?
+    @StateObject private var model: DocumentModel
     @State private var isEditing = false
     // Per window, and deliberately not persisted: a document opened fresh starts at the
     // fixed-width column, and widening one window doesn't reflow every other one.
     @State private var fullWidth = false
-    @State private var sourceText: String
-    // The last content this window put on disk (or adopted from it). The watcher drops
-    // events whose disk content matches — the echo of our own atomic save — and never
-    // overwrites the buffer while it is dirty (sourceText != savedText).
-    @State private var savedText: String
-    @State private var autosaveWork: DispatchWorkItem?
-    @State private var renderError: String?
-    @State private var watcher: FileWatcher?
-    @State private var window: NSWindow?
+    // Weak: a strong reference from view state to the window that hosts that state is a
+    // cycle, and a closed window that never deallocates keeps its web content process.
+    @State private var window = WeakWindow()
     @State private var dragStartDocWidth: Double?
     // Held in @State during a drag so the split isn't written through UserDefaults on
     // every frame; committed to `sidebarWidth` on release.
@@ -51,10 +44,8 @@ struct DocumentView: View {
     @AppStorage("commentsTextPaneWidth") private var textPaneWidth = defaultDocumentWidth
 
     init(initialText: String, fileURL: URL?) {
-        self.initialText = initialText
         self.fileURL = fileURL
-        _sourceText = State(initialValue: initialText)
-        _savedText = State(initialValue: initialText)
+        _model = StateObject(wrappedValue: DocumentModel(initialText: initialText, fileURL: fileURL))
         _store = StateObject(wrappedValue: CommentStore(documentURL: fileURL))
     }
 
@@ -66,11 +57,11 @@ struct DocumentView: View {
     private var contentView: some View {
         ZStack {
             WebView(
-                document: document, fileURL: fileURL,
+                document: model.document, fileURL: fileURL,
                 fullWidth: fullWidth, store: store)
             if isEditing {
                 MarkdownTextEditor(
-                    text: $sourceText, fontSize: 13 * pageZoom, onEdit: scheduleAutosave)
+                    text: $model.sourceText, fontSize: 13 * pageZoom, onEdit: model.scheduleAutosave)
             }
         }
     }
@@ -78,7 +69,7 @@ struct DocumentView: View {
     var body: some View {
         Group {
             // A render error must never replace the editor — it's the tool for fixing the text.
-            if let renderError, !isEditing {
+            if let renderError = model.renderError, !isEditing {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.largeTitle)
@@ -117,7 +108,7 @@ struct DocumentView: View {
             }
             Button {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(sourceText, forType: .string)
+                NSPasteboard.general.setString(model.sourceText, forType: .string)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
@@ -158,19 +149,19 @@ struct DocumentView: View {
         }
         // Hands the key window's width toggle and save action to the app-level menus.
         .focusedSceneValue(\.fullWidth, $fullWidth)
-        .focusedSceneValue(\.saveDocument, SaveDocumentAction { flushAutosave() })
+        .focusedSceneValue(\.saveDocument, SaveDocumentAction { model.flushAutosave() })
         .background(WindowAccessor { resolved in
-            window = resolved
+            window.value = resolved
             if let resolved, showComments { fitWindowToComments(resolved) }
         })
         .onChange(of: isEditing) { editing in
-            if !editing { flushAutosave() }
+            if !editing { model.flushAutosave() }
         }
-        .onDisappear { flushAutosave() }
+        .onDisappear { model.flushAutosave() }
         // onDisappear is not guaranteed on ⌘Q. willTerminate is delivered synchronously
         // and the save is a synchronous write, so it completes before the process exits.
         .onReceive(NotificationCenter.default.publisher(
-            for: NSApplication.willTerminateNotification)) { _ in flushAutosave() }
+            for: NSApplication.willTerminateNotification)) { _ in model.flushAutosave() }
         .onChange(of: showComments) { applyCommentsLayout(show: $0) }
         .onChange(of: store.pending) { pending in
             if pending != nil { showComments = true }
@@ -178,10 +169,7 @@ struct DocumentView: View {
         .onChange(of: store.selectedThreadID) { id in
             if id != nil { showComments = true }
         }
-        .task {
-            await render(text: initialText)
-            startWatching()
-        }
+        .task { model.start() }
     }
 
     private var minSplitWidth: Double { minTextPaneWidth + dividerWidth + minSidebarWidth }
@@ -229,68 +217,10 @@ struct DocumentView: View {
             }
     }
 
-    private func render(text: String) async {
-        let url = fileURL
-        let result = await Task.detached(priority: .userInitiated) { () -> Result<RenderedDocument, Error> in
-            var options = RenderOptions()
-            options.baseURL = url?.deletingLastPathComponent()
-            options.title = url?.lastPathComponent ?? "Markdown"
-            do {
-                return .success(try MarkdownRenderer().renderDocument(
-                    fileContents: text,
-                    pathExtension: url?.pathExtension ?? "",
-                    options: options))
-            } catch {
-                return .failure(error)
-            }
-        }.value
-        switch result {
-        case .success(let rendered):
-            document = rendered
-            renderError = nil
-        case .failure(let error):
-            renderError = error.localizedDescription
-        }
-    }
-
-    private func scheduleAutosave() {
-        autosaveWork?.cancel()
-        let work = DispatchWorkItem { performSave() }
-        autosaveWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
-    }
-
-    private func flushAutosave() {
-        autosaveWork?.cancel()
-        autosaveWork = nil
-        performSave()
-    }
-
-    // Synchronous and on main by design: the watcher callback also runs on main, so at
-    // callback time the disk always reflects the last completed write and a single
-    // savedText comparison is race-free. An off-main write would reintroduce the
-    // interleaving where our own save looks like an external change.
-    private func performSave() {
-        guard let url = fileURL, sourceText != savedText else { return }
-        let text = sourceText
-        let previous = savedText
-        savedText = text
-        do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
-        } catch {
-            // Buffer stays dirty so the next autosave retries.
-            savedText = previous
-            NSSound.beep()
-            return
-        }
-        // The watcher drops the echo of this write, so the rendered view updates here.
-        Task { await render(text: text) }
-    }
-
     // Grow/shrink the window so the document pane keeps its width across a toggle. The two
     // branches are exact inverses, so hiding and re-showing lands on the same split.
     private func applyCommentsLayout(show: Bool) {
-        guard let window else { return }
+        guard let window = window.value else { return }
         var frame = window.frame
         if show {
             textPaneWidth = frame.width
@@ -322,20 +252,9 @@ struct DocumentView: View {
             frame.origin.x = max(visible.minX, visible.maxX - frame.size.width)
         }
     }
+}
 
-    private func startWatching() {
-        guard watcher == nil, let url = fileURL else { return }
-        watcher = FileWatcher(url: url) {
-            guard let data = try? Data(contentsOf: url) else { return }
-            let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
-            // Echo of our own save.
-            guard text != savedText else { return }
-            // Dirty buffer wins: un-flushed keystrokes are never clobbered by an external
-            // write — the next autosave overwrites it instead.
-            guard sourceText == savedText else { return }
-            savedText = text
-            sourceText = text
-            Task { await render(text: text) }
-        }
-    }
+/// `@State` may only hold the window weakly; see `DocumentView.window`.
+struct WeakWindow {
+    weak var value: NSWindow?
 }
