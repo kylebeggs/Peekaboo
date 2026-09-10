@@ -234,7 +234,7 @@ struct WebView: NSViewRepresentable {
                 return
             }
             DispatchQueue.global(qos: .userInitiated).async {
-                let resolved = WikiLinkResolver.resolve(target: target, from: origin)
+                let resolved = WikiLinkResolver.shared.resolve(target: target, from: origin)
                 DispatchQueue.main.async {
                     guard let resolved else {
                         NSSound.beep()
