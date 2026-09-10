@@ -13,12 +13,10 @@ struct WebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        if let mermaid = Self.mermaidScript {
-            configuration.userContentController.addUserScript(
-                WKUserScript(source: mermaid, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-            )
-        }
-        // Added after Mermaid so it can wrap the shared `__peekabooRender` hook.
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: Self.renderHook, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        )
+        // Added after the render hook so it can wrap `__peekabooRender`.
         configuration.userContentController.addUserScript(
             WKUserScript(source: CommentBridge.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
@@ -49,32 +47,40 @@ struct WebView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "pkbComment")
     }
 
-    /// mermaid.min.js plus an init hook. The hook is re-invoked after live-reload
-    /// body swaps; JavaScript is enabled in the app web view solely for this.
-    private static let mermaidScript: String? = {
-        guard let url = Bundle.main.url(forResource: "mermaid.min", withExtension: "js"),
-              let library = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        let hook = """
-
-        window.__peekabooRender = function() {
-            document.querySelectorAll('pre > code.language-mermaid').forEach(function(code) {
-                var div = document.createElement('div');
-                div.className = 'mermaid';
-                div.textContent = code.textContent;
-                code.parentElement.replaceWith(div);
+    /// The Mermaid init hook, re-invoked after live-reload body swaps. JavaScript is
+    /// enabled in the app web view solely for this. The 3.3 MB library itself is not a
+    /// user script: it is evaluated on demand (`needMermaid`) the first time a page
+    /// actually contains a diagram, so windows without one never parse or hold it.
+    private static let renderHook = """
+    window.__peekabooRender = function() {
+        document.querySelectorAll('pre > code.language-mermaid').forEach(function(code) {
+            var div = document.createElement('div');
+            div.className = 'mermaid';
+            div.textContent = code.textContent;
+            code.parentElement.replaceWith(div);
+        });
+        if (!document.querySelector('.mermaid')) { return; }
+        if (!window.mermaid) {
+            window.webkit.messageHandlers.pkbComment.postMessage({ type: 'needMermaid' });
+            return;
+        }
+        if (!window.__peekabooMermaidReady) {
+            window.__peekabooMermaidReady = true;
+            mermaid.initialize({
+                startOnLoad: false,
+                securityLevel: 'strict',
+                theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default'
             });
-            if (window.mermaid && document.querySelector('.mermaid')) {
-                mermaid.initialize({
-                    startOnLoad: false,
-                    securityLevel: 'strict',
-                    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default'
-                });
-                mermaid.run({ querySelector: '.mermaid' });
-            }
-        };
-        window.__peekabooRender();
-        """
-        return library + hook
+        }
+        // Already-rendered diagrams carry data-processed and are skipped by run().
+        mermaid.run({ querySelector: '.mermaid' });
+    };
+    window.__peekabooRender();
+    """
+
+    private static let mermaidLibrary: String? = {
+        guard let url = Bundle.main.url(forResource: "mermaid.min", withExtension: "js") else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
     }()
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -84,8 +90,10 @@ struct WebView: NSViewRepresentable {
         weak var webView: WKWebView?
         private var loadedOnce = false
         private var lastBody: String?
+        private var lastCSS: String?
         private var lastAnchorsJSON: String?
         private var appliedFullWidth: Bool?
+        private var mermaidRequested = false
 
         /// Drops the 980px column cap by toggling a class the stylesheet already carries.
         ///
@@ -117,6 +125,7 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             lastAnchorsJSON = nil // page reloaded; force a re-push
+            mermaidRequested = false
             // Showing or hiding the comments sidebar moves the WebView between two branches of
             // DocumentView's Group, which can rebuild the web view and reload from scratch. The
             // fresh page has no class on it, whatever the coordinator last pushed.
@@ -128,8 +137,12 @@ struct WebView: NSViewRepresentable {
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == "pkbComment",
                   let body = message.body as? [String: Any],
-                  let type = body["type"] as? String,
-                  let store else { return }
+                  let type = body["type"] as? String else { return }
+            if type == "needMermaid" {
+                loadMermaid(in: message.webView)
+                return
+            }
+            guard let store else { return }
             switch type {
             case "add":
                 guard let raw = body["anchor"] as? [String: Any] else { return }
@@ -148,18 +161,39 @@ struct WebView: NSViewRepresentable {
             }
         }
 
+        /// Evaluates the Mermaid library once per page, then re-runs the render hook
+        /// that asked for it. Repeat requests while the library loads are ignored.
+        private func loadMermaid(in webView: WKWebView?) {
+            guard !mermaidRequested, let webView, let library = WebView.mermaidLibrary else { return }
+            mermaidRequested = true
+            webView.evaluateJavaScript(library) { _, _ in
+                webView.evaluateJavaScript("window.__peekabooRender && window.__peekabooRender();")
+            }
+        }
+
         func show(_ document: RenderedDocument, in webView: WKWebView) {
             guard document.bodyHTML != lastBody else { return }
             lastBody = document.bodyHTML
 
             if !loadedOnce {
                 loadedOnce = true
+                lastCSS = document.css
                 webView.loadHTMLString(document.html, baseURL: nil)
                 return
             }
-            // Body swap instead of reload: preserves scroll position, no flash.
-            let script = """
-            document.getElementById('peekaboo-style').textContent = \(jsString(document.css));
+            // Body swap instead of reload: preserves scroll position, no flash. The
+            // stylesheet only changes when math appears or disappears (it carries the
+            // base64 KaTeX fonts, ~400 KB); re-assigning it makes WebKit re-parse the
+            // sheet and re-decode every font, so it is left alone when unchanged.
+            // Plain `evaluateJavaScript` with the payload as a string literal, not
+            // `callAsyncJavaScript(arguments:)`: the argument path leaked ~8 MB of mapped
+            // memory in this process per multi-megabyte reload.
+            var script = ""
+            if document.css != lastCSS {
+                lastCSS = document.css
+                script += "document.getElementById('peekaboo-style').textContent = \(jsString(document.css));\n"
+            }
+            script += """
             document.body.innerHTML = \(jsString(document.bodyHTML));
             var max = document.body.scrollHeight - window.innerHeight;
             if (window.scrollY > max) { window.scrollTo(0, Math.max(0, max)); }
