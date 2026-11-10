@@ -127,24 +127,44 @@ private struct ThreadCard: View {
     let isOutdated: Bool
 
     @State private var replyText = ""
+    @State private var isExpanded = false
+
+    // Derived from status rather than stored, so a thread resolved from outside the app
+    // (an agent editing the sidecar) collapses on reload just like one resolved here.
+    private var isCollapsed: Bool { thread.status == .resolved && !isExpanded }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             headerRow
             quote
-            messages
-            replyRow
-            actionRow
+            if isCollapsed {
+                preview
+            } else {
+                messages
+                replyRow
+                actionRow
+            }
         }
         .padding(10)
         .background(cardBackground)
         .overlay(cardBorder)
         .opacity(thread.status == .resolved ? 0.7 : 1)
+        .animation(.easeInOut(duration: 0.15), value: isCollapsed)
         .onTapGesture { store.selectThread(thread.id) }
+        // Without this, expand → Reopen → Resolve would leave the resolved thread expanded.
+        .onChange(of: thread.status) { _ in isExpanded = false }
     }
 
     @ViewBuilder private var headerRow: some View {
         HStack(spacing: 6) {
+            if thread.status == .resolved {
+                Button { isExpanded.toggle() } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .frame(width: 12)
+                }
+                .buttonStyle(.borderless)
+                .help(isExpanded ? "Collapse thread" : "Expand thread")
+            }
             Image(systemName: thread.kind == .inline ? "text.quote" : "doc.text")
                 .foregroundStyle(.secondary)
             if thread.status == .resolved {
@@ -165,8 +185,25 @@ private struct ThreadCard: View {
 
     @ViewBuilder private var quote: some View {
         if thread.kind == .inline, let anchor = thread.anchor {
-            QuoteView(text: anchor.quote)
+            QuoteView(text: anchor.quote, lineLimit: isCollapsed ? 1 : 3)
                 .opacity(isOutdated ? 0.5 : 1)
+        }
+    }
+
+    // Native Text only: a rich body renders in a WKWebView, which can't be clamped to two lines.
+    @ViewBuilder private var preview: some View {
+        if let first = thread.messages.first {
+            Group {
+                if !CommentMarkdown.needsWebRendering(first.body),
+                   let attributed = store.renderCache.attributedBody(for: first.body) {
+                    Text(attributed)
+                } else {
+                    Text(first.body.split(whereSeparator: \.isWhitespace).joined(separator: " "))
+                }
+            }
+            .font(.callout)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -219,11 +256,12 @@ private struct ThreadCard: View {
 
 private struct QuoteView: View {
     let text: String
+    var lineLimit = 3
     var body: some View {
         Text(text.split(whereSeparator: \.isWhitespace).joined(separator: " "))
             .font(.callout)
             .italic()
-            .lineLimit(3)
+            .lineLimit(lineLimit)
             .padding(.leading, 8)
             .overlay(Rectangle().frame(width: 3).foregroundStyle(.secondary), alignment: .leading)
             .foregroundStyle(.secondary)
