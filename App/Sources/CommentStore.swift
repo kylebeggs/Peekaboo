@@ -7,10 +7,11 @@ struct PendingComment: Equatable {
     var anchor: CommentAnchor?
 }
 
-/// Owns the comment threads for one open document and persists them to the
-/// `.<doc>.review.md` sidecar (a hidden dot-file). The same file is human- and agent-readable, so it
-/// doubles as the artifact handed to Claude. The sidecar is watched so replies
-/// an agent appends show up live.
+/// Owns the comment threads for one window and persists them to its review file: the
+/// `.<doc>.review.md` sidecar (a hidden dot-file) for a document, or
+/// `<repo>/.peekaboo/review.md` for a repo diff review. The same file is human- and
+/// agent-readable, so it doubles as the artifact handed to Claude. It is watched so
+/// replies an agent appends show up live.
 final class CommentStore: ObservableObject {
     @Published private(set) var threads: [CommentThread] = []
     @Published var pending: PendingComment?
@@ -28,7 +29,11 @@ final class CommentStore: ObservableObject {
 
     let sidecarURL: URL?
     let renderCache: CommentRenderCache
+    /// True for a repo diff review, whose inline anchors are line-located.
+    let isDiffReview: Bool
     private let documentName: String
+    /// What a diff review is against; written into the file's header for the agent.
+    private var diffContext: DiffContext?
     private var watcher: FileWatcher?
     private var lastWrittenText: String?
 
@@ -41,8 +46,35 @@ final class CommentStore: ObservableObject {
             sidecarURL = nil
             documentName = documentURL?.lastPathComponent ?? "Document"
         }
+        isDiffReview = false
         loadFromDisk()
         ensureWatching()
+    }
+
+    /// A store for a repo diff review. Unlike a document sidecar, the file is created
+    /// straight away: an agent then always has a file to answer in, and the watcher has
+    /// something to watch from the start (a file created later would go unnoticed).
+    init(repoRoot: URL) {
+        renderCache = CommentRenderCache(baseURL: repoRoot)
+        sidecarURL = ReviewFile.repoReviewURL(forRepo: repoRoot)
+        documentName = repoRoot.lastPathComponent
+        isDiffReview = true
+        if let url = sidecarURL {
+            try? FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        }
+        loadFromDisk()
+        if let url = sidecarURL, !FileManager.default.fileExists(atPath: url.path) { save() }
+        ensureWatching()
+    }
+
+    /// Records what the review is currently diffed against, rewriting the file only
+    /// when that actually changed (every write invalidates an agent's last read of it).
+    func setDiffContext(_ context: DiffContext) {
+        guard context != diffContext else { return }
+        reloadFromDisk()
+        diffContext = context
+        save()
     }
 
     var inlineThreads: [CommentThread] {
@@ -67,6 +99,7 @@ final class CommentStore: ObservableObject {
         guard let pending else { return }
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        reloadFromDisk()
         let thread = CommentThread(
             id: newID(),
             kind: pending.anchor == nil ? .general : .inline,
@@ -80,18 +113,21 @@ final class CommentStore: ObservableObject {
 
     func addReply(to threadID: String, body: String) {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        reloadFromDisk()
         guard !trimmed.isEmpty, let index = threads.firstIndex(where: { $0.id == threadID }) else { return }
         threads[index].messages.append(message(trimmed))
         save()
     }
 
     func setStatus(_ status: CommentStatus, for threadID: String) {
+        reloadFromDisk()
         guard let index = threads.firstIndex(where: { $0.id == threadID }) else { return }
         threads[index].status = status
         save()
     }
 
     func delete(_ threadID: String) {
+        reloadFromDisk()
         threads.removeAll { $0.id == threadID }
         if selectedThreadID == threadID { selectedThreadID = nil }
         save()
@@ -99,6 +135,7 @@ final class CommentStore: ObservableObject {
 
     func editMessage(in threadID: String, at index: Int, body: String) {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        reloadFromDisk()
         guard !trimmed.isEmpty,
               let ti = threads.firstIndex(where: { $0.id == threadID }),
               threads[ti].messages.indices.contains(index),
@@ -130,9 +167,13 @@ final class CommentStore: ObservableObject {
 
     // MARK: - Persistence
 
+    // Every mutation above calls `reloadFromDisk()` first. `save()` rewrites the whole
+    // file from memory, and the watcher that would have told us about an agent's edit
+    // is debounced: without the reload, a reply sent in that window silently erases
+    // whatever the agent had just written.
     private func save() {
         guard let url = sidecarURL else { return }
-        let text = ReviewFile(documentName: documentName, threads: threads).serialize()
+        let text = ReviewFile(documentName: documentName, diff: diffContext, threads: threads).serialize()
         lastWrittenText = text
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
@@ -150,7 +191,9 @@ final class CommentStore: ObservableObject {
               let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else { return }
         lastWrittenText = text
-        threads = ReviewFile.parse(text).threads
+        let file = ReviewFile.parse(text)
+        threads = file.threads
+        diffContext = file.diff
     }
 
     private func reloadFromDisk() {

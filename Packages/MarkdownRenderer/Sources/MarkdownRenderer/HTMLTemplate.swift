@@ -14,13 +14,20 @@ enum HTMLTemplate {
     private static let baseCSS: String = {
         var css = layoutCSS
         css += load("github-markdown", ext: "css", subdirectory: "Resources/css") ?? ""
+        css += highlightCSS
+        css += alertCSS
+        return css
+    }()
+
+    /// The highlight.js token themes, light and dark; shared with the diff page.
+    static let highlightCSS: String = {
+        var css = ""
         if let light = load("github.min", ext: "css", subdirectory: "Resources/highlight") {
             css += "\n@media (prefers-color-scheme: light) {\n\(light)\n}"
         }
         if let dark = load("github-dark.min", ext: "css", subdirectory: "Resources/highlight") {
             css += "\n@media (prefers-color-scheme: dark) {\n\(dark)\n}"
         }
-        css += alertCSS
         return css
     }()
 

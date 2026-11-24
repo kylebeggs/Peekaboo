@@ -32,3 +32,20 @@ extension FocusedValues {
         set { self[SaveDocumentKey.self] = newValue }
     }
 }
+
+/// The key review window's "re-run the diff" action, for View > Refresh (⌘R). Nil when
+/// the key window is a document, which reloads itself.
+struct RefreshReviewKey: FocusedValueKey {
+    typealias Value = RefreshReviewAction
+}
+
+struct RefreshReviewAction {
+    let refresh: () -> Void
+}
+
+extension FocusedValues {
+    var refreshReview: RefreshReviewAction? {
+        get { self[RefreshReviewKey.self] }
+        set { self[RefreshReviewKey.self] = newValue }
+    }
+}

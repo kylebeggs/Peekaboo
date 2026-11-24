@@ -29,7 +29,14 @@ struct CommentsSidebar: View {
                         if !ordered.general.isEmpty && !ordered.inline.isEmpty {
                             Divider().padding(.vertical, 4)
                         }
-                        ForEach(ordered.inline, id: \.id) { card($0) }
+                        ForEach(Array(ordered.inline.enumerated()), id: \.element.id) { index, thread in
+                            // Diff reviews only: a label wherever the file changes.
+                            if let file = thread.anchor?.location?.file,
+                               index == 0 || ordered.inline[index - 1].anchor?.location?.file != file {
+                                FileLabel(path: file)
+                            }
+                            card(thread)
+                        }
                     }
                     .padding(8)
                 }
@@ -75,7 +82,9 @@ struct CommentsSidebar: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.title)
                 .foregroundStyle(.secondary)
-            Text("Select text in the document to comment, or add a general comment.")
+            Text(store.isDiffReview
+                 ? "Click a line number or select code to comment, or add a general comment."
+                 : "Select text in the document to comment, or add a general comment.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -87,7 +96,7 @@ struct CommentsSidebar: View {
     private var pendingCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let anchor = store.pending?.anchor {
-                QuoteView(text: anchor.quote)
+                QuoteView(anchor: anchor)
             } else {
                 Label("General comment", systemImage: "doc.text")
                     .font(.caption).foregroundStyle(.secondary)
@@ -185,7 +194,7 @@ private struct ThreadCard: View {
 
     @ViewBuilder private var quote: some View {
         if thread.kind == .inline, let anchor = thread.anchor {
-            QuoteView(text: anchor.quote, lineLimit: isCollapsed ? 1 : 3)
+            QuoteView(anchor: anchor, lineLimit: isCollapsed ? 1 : 3)
                 .opacity(isOutdated ? 0.5 : 1)
         }
     }
@@ -255,16 +264,51 @@ private struct ThreadCard: View {
 }
 
 private struct QuoteView: View {
-    let text: String
+    let anchor: CommentAnchor
     var lineLimit = 3
+
     var body: some View {
-        Text(text.split(whereSeparator: \.isWhitespace).joined(separator: " "))
-            .font(.callout)
-            .italic()
-            .lineLimit(lineLimit)
-            .padding(.leading, 8)
-            .overlay(Rectangle().frame(width: 3).foregroundStyle(.secondary), alignment: .leading)
+        Group {
+            if let location = anchor.location {
+                // A diff anchor quotes code: keep its line breaks and say where it is.
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.caption(location))
+                        .font(.caption2)
+                    Text(anchor.quote)
+                        .font(.caption.monospaced())
+                        .lineLimit(lineLimit)
+                }
+            } else {
+                Text(anchor.quote.split(whereSeparator: \.isWhitespace).joined(separator: " "))
+                    .font(.callout)
+                    .italic()
+                    .lineLimit(lineLimit)
+            }
+        }
+        .padding(.leading, 8)
+        .overlay(Rectangle().frame(width: 3).foregroundStyle(.secondary), alignment: .leading)
+        .foregroundStyle(.secondary)
+    }
+
+    private static func caption(_ location: CommentLocation) -> String {
+        let lines = location.endLine > location.line ? "\(location.line)–\(location.endLine)" : "\(location.line)"
+        return "line \(lines)" + (location.side == .old ? " · before" : "")
+    }
+}
+
+/// Heads a run of threads on the same file in a diff review.
+private struct FileLabel: View {
+    let path: String
+    var body: some View {
+        Text(path)
+            .font(.caption.monospaced())
             .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.head)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+            .padding(.horizontal, 2)
+            .help(path)
     }
 }
 

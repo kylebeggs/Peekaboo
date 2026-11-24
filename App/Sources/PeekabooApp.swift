@@ -11,6 +11,7 @@ struct PeekabooApp: App {
     // Published by whichever DocumentView currently has focus; nil when no document window does.
     @FocusedValue(\.fullWidth) private var fullWidth: Binding<Bool>?
     @FocusedValue(\.saveDocument) private var saveDocument: SaveDocumentAction?
+    @FocusedValue(\.refreshReview) private var refreshReview: RefreshReviewAction?
 
     var body: some Scene {
         DocumentGroup(viewing: MarkdownFile.self) { configuration in
@@ -29,7 +30,15 @@ struct PeekabooApp: App {
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(saveDocument == nil)
             }
+            CommandGroup(after: .newItem) {
+                Button("Review Repository…") { ReviewSession.chooseRepository() }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
             CommandGroup(after: .sidebar) {
+                Divider()
+                Button("Refresh") { refreshReview?.refresh() }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .disabled(refreshReview == nil)
                 Divider()
                 Toggle("Full Width", isOn: fullWidth ?? .constant(false))
                     .keyboardShortcut("f", modifiers: [.command, .option])
@@ -43,5 +52,15 @@ struct PeekabooApp: App {
                     .keyboardShortcut("0", modifiers: .command)
             }
         }
+
+        // A repo review is opened as a document (its request file) so it gets everything
+        // documents get for free: no Open panel on a cold launch, one window per repo,
+        // window restoration, Open Recent.
+        DocumentGroup(viewing: ReviewSession.self) { configuration in
+            if let requestURL = configuration.fileURL {
+                ReviewView(requestURL: requestURL)
+            }
+        }
+        .defaultSize(width: 1500, height: 1330)
     }
 }

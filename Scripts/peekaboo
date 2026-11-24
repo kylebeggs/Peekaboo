@@ -1,9 +1,24 @@
 #!/bin/sh
-# Opens files in the Peekaboo markdown viewer.
+# Opens files in the Peekaboo markdown viewer, or a git repo's changes as a review.
 case "${1:-}" in
   -h|--help)
     echo "usage: peekaboo [file.md ...]"
+    echo "       peekaboo diff [<base>]   review this repo's changes against <base>"
+    echo "                                (default: where the branch left the default branch)"
     exit 0
+    ;;
+  diff)
+    root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+      echo "peekaboo diff: not inside a git repository" >&2
+      exit 1
+    }
+    # The review's home. It ignores itself, so it never shows up in `git status`.
+    mkdir -p "$root/.peekaboo"
+    [ -f "$root/.peekaboo/.gitignore" ] || echo '*' > "$root/.peekaboo/.gitignore"
+    # The request file the app opens as a document: one line, the base ref (empty = default).
+    request="$root/.peekaboo/$(basename "$root").pkbreview"
+    printf '%s\n' "${2:-}" > "$request"
+    exec open -a Peekaboo "$request"
     ;;
 esac
 exec open -a Peekaboo "$@"

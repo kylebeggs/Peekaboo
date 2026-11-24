@@ -54,6 +54,23 @@ targets:
             LSItemContentTypes:
               - public.source-code
               - com.peekaboo.julia-source
+          # The request file `peekaboo diff` writes to open a repo review. Viewer for the
+          # same reason as above; Owner because nothing else opens it.
+          - CFBundleTypeName: Peekaboo Review
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.kylebeggs.peekaboo.review
+        UTExportedTypeDeclarations:
+          # Conforms to public.data only: the markdown scene reads public.plain-text, so a
+          # text-conforming type here would be claimed by both DocumentGroups.
+          - UTTypeIdentifier: com.kylebeggs.peekaboo.review
+            UTTypeConformsTo:
+              - public.data
+            UTTypeDescription: Peekaboo Review
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - pkbreview
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: net.daringfireball.markdown
             UTTypeConformsTo:

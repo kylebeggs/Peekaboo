@@ -72,8 +72,12 @@ final class JSEngine {
         queue.sync { CacheStatistics(entries: cache.count, bytes: cache.totalBytes) }
     }
 
-    func highlight(code: String, language: String) -> String? {
+    /// `useCache: false` is for whole-file highlights (the diff view): one of those can
+    /// be a sizeable share of the byte limit, and caching it would evict the small
+    /// KaTeX and code-block entries every open markdown window relies on.
+    func highlight(code: String, language: String, useCache: Bool = true) -> String? {
         queue.sync { () -> String? in
+            guard useCache else { return autoreleasepool { callHighlight(code: code, language: language) } }
             let key = CacheKey.highlight(code: code, language: language)
             if case .highlight(let cached)? = cache.value(forKey: key) { return cached }
             let highlighted = autoreleasepool { callHighlight(code: code, language: language) }

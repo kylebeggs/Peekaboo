@@ -44,6 +44,8 @@ cache), and installs the `peekaboo` command-line wrapper. Re-run both after pull
   copy of the source and a Show in Finder button
 - **Light / dark mode** following the system appearance
 - **Review-comment sidebar** for annotating documents
+- **Local diff review** — `peekaboo diff` shows a git repo's changes as a GitHub-style side-by-side
+  diff with per-file Viewed toggles and line comments (see [Reviewing a diff](#reviewing-a-diff))
 - **Self-contained output** — local images are inlined as data URIs
 
 ## Usage
@@ -55,12 +57,37 @@ cache), and installs the `peekaboo` command-line wrapper. Re-run both after pull
   preview refreshes on save.
 - **Supported extensions** — `md`, `markdown`, `mdown`, `mkd`, `mkdn`, plus source files like `.jl`.
 
+## Reviewing a diff
+
+Run `peekaboo diff` inside a git repository (or use **File > Review Repository…**) to review its
+changes the way you would a pull request, without pushing anything:
+
+- **What it compares** — the point where your branch left the default branch, against the working
+  tree. Uncommitted edits and brand-new untracked files are included: it is what the PR would
+  contain if you committed right now. Pass a ref to compare against something else:
+  `peekaboo diff HEAD~3`.
+- **Side by side** — old on the left, new on the right, removed lines red and added lines green,
+  syntax-highlighted, with the changed part of each edited line marked.
+- **Viewed** — tick a file's Viewed box to collapse it. If that file's changes later differ, it
+  un-views itself, as on GitHub.
+- **Comments** — click a line number, or select some code and press **Comment**. Threads appear in
+  the same sidebar documents use, grouped by file.
+- **Live** — the window follows the working tree, so edits made while it is open show up as they
+  are saved, without losing your place or your collapsed files.
+
+Comments are stored in `<repo>/.peekaboo/review.md`, a readable Markdown file meant to be handed to
+a coding agent: it reads the threads, changes the code, and replies in the same file, which the
+window picks up live. A comment stays attached to its lines as the code moves; if the commented
+line itself is rewritten, the thread is marked *outdated*. The `.peekaboo/` folder ignores itself,
+so it never shows up in `git status`.
+
 ## Under the hood
 
 Peekaboo is three layers, with the dependency flowing downward:
 
 - **`App/`** — the SwiftUI app: `DocumentGroup` opens files, a `WKWebView` displays the rendered
-  HTML, and a `FileWatcher` drives live reload.
+  HTML, and a `FileWatcher` drives live reload. A second document scene hosts diff reviews, which
+  shell out to `git` for the diff itself.
 - **`QuickLook/`** — the sandboxed, read-only Quick Look extension. It runs **without JavaScript**.
 - **`Packages/MarkdownRenderer/`** — the shared rendering engine both layers call into. It's a
   UI-free, fully testable Swift package that turns Markdown into a single self-contained HTML

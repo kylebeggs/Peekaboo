@@ -10,7 +10,7 @@ package, `Packages/MarkdownRenderer`.
 ./Scripts/install.sh    # copy built app to /Applications, re-register QL extension, flush QL cache, install `peekaboo` CLI
 ```
 
-`Scripts/peekaboo` is a thin `open -a Peekaboo` wrapper; `install.sh` copies it to `/opt/homebrew/bin` (falling back to `/usr/local/bin`) so `peekaboo file.md` opens files in the app.
+`Scripts/peekaboo` is a thin `open -a Peekaboo` wrapper; `install.sh` copies it to `/opt/homebrew/bin` (falling back to `/usr/local/bin`) so `peekaboo file.md` opens files in the app. `peekaboo diff [<base>]` opens a repo's diff review: it writes a one-line request file (`<repo>/.peekaboo/<name>.pkbreview`) and opens that as a document.
 
 When Kyle asks to "install", "publish", or "release" the app "for me" / "to myself" / "here", he means the local install: run `./Scripts/build.sh` + `./Scripts/install.sh` so `/Applications/Peekaboo.app` is the latest build — never an Artifact, GitHub release, or other external distribution.
 
@@ -24,6 +24,8 @@ swift test                                          # all tests (XCTest)
 swift test --filter MarkdownRendererTests/testTable # single test
 ```
 
+`git diff <base> | markdown-render-cli --diff [<worktree root>]` renders the diff page to stdout, for checking the diff renderer without the app.
+
 `qlmanage -p somefile.md` previews via the installed Quick Look extension; `qlmanage -r` resets it after reinstalling.
 
 ## Critical: the Xcode project is generated
@@ -36,7 +38,7 @@ Build products go to `/tmp/peekaboo-dd` intentionally: the repo lives in iCloud 
 
 Three layers, dependency flows downward:
 
-1. **`App/Sources/`** — SwiftUI app. `DocumentGroup` opens markdown files (`MarkdownFile.swift`), `DocumentView.swift` renders async (with a toolbar Rendered/Edit toggle; edit mode is a plain NSTextView in `MarkdownTextEditor.swift` that autosaves debounced), `WebView.swift` wraps WKWebView, `FileWatcher.swift` (GCD dispatch source, 150ms debounce) drives live reload. The review-comment sidebar (`CommentStore.swift` + `Comment*.swift`) persists threads to a hidden `.<doc>.review.md` sidecar beside the document; the sidecar format lives in the package's `ReviewFile.swift`.
+1. **`App/Sources/`** — SwiftUI app. `DocumentGroup` opens markdown files (`MarkdownFile.swift`), `DocumentView.swift` renders async (with a toolbar Rendered/Edit toggle; edit mode is a plain NSTextView in `MarkdownTextEditor.swift` that autosaves debounced), `WebView.swift` wraps WKWebView, `FileWatcher.swift` (GCD dispatch source, 150ms debounce) drives live reload. The review-comment sidebar (`CommentStore.swift` + `Comment*.swift`) persists threads to a hidden `.<doc>.review.md` sidecar beside the document; the sidecar format lives in the package's `ReviewFile.swift`. A second `DocumentGroup` hosts repo diff reviews (`Review*.swift`, `Diff*.swift`, `GitRunner.swift`, `RepoWatcher.swift`); see *Diff review* below.
 2. **`QuickLook/Sources/PreviewProvider.swift`** — sandboxed, read-only QL extension (`QLPreviewProvider`); same renderer, no JavaScript.
 3. **`Packages/MarkdownRenderer/`** — pure rendering engine, UI-free and fully testable. Also builds a `markdown-render-cli` executable for command-line rendering.
 
@@ -44,12 +46,25 @@ Three layers, dependency flows downward:
 
 Markdown text passes through ordered passes before/after cmark-gfm parsing (`CMarkPipeline.swift`): math extraction (`MathExtractor` → KaTeX via MathJaxSwift), YAML front matter (`FrontMatterPass`, Yams), GitHub alerts (`AlertsPass`), Obsidian wikilinks (`WikiLinksPass`), emoji shortcodes, heading anchor IDs, local-image base64 inlining. `HTMLTemplate.swift` assembles the final self-contained HTML: GitHub markdown CSS, highlight.js, and KaTeX fonts are all inlined (base64) so no network access is needed — required for the sandboxed QL extension.
 
+### Diff review
+
+A local GitHub-PR-style review of a repo's changes. Git is the diff engine: `GitRunner` runs `/usr/bin/git` (the app is unsandboxed) and the package parses its output. Nothing here computes a diff itself.
+
+- **Flow per refresh** (`ReviewModel` + `ReviewWorker`): resolve the base (merge-base of `HEAD` with the default branch, so the diff is what a PR would show) → `git diff <base>` against the working tree, plus untracked files as wholly-added → `UnifiedDiff.parse` → one HTML body per file from `DiffRenderer`, cached by the file's patch digest → a `Snapshot` the web view diffs against what it last pushed.
+- **Package side**: `UnifiedDiff.swift` (parser; hunks are consumed by the header's line counts, never by scanning for the next header), `DiffRenderer.swift` (split table, row pairing, size gates), `DiffHighlighter.swift` (highlights the *whole* file then splits it into balanced per-line HTML, because a hunk on its own cannot tell it starts inside a block comment), `DiffCSS.swift` (self-contained; deliberately does not load `github-markdown.css`), `DiffAnchors.swift` (line anchors and re-locating them).
+- **The page is patched per file** (`DiffBridge.swift`, `DiffWebView.swift`), not body-swapped like the markdown view: replacing everything would reset each file's collapsed state and the reader's selection on every save.
+- **Comments** reuse `CommentStore` and `CommentsSidebar`. Anchors carry a `CommentLocation` (file, side, line range); the quote is what re-locates them, the line number only breaks ties. The review file is `<repo>/.peekaboo/review.md`, the same grammar as a sidecar plus a `<!-- pkb-review -->` header and the location keys. Viewed state is `.peekaboo/viewed.json`. The folder holds a `.gitignore` of `*`.
+- **Launch is a document open**, not a URL scheme: the `.pkbreview` request file gives no Open panel on cold launch and one window per repo. Its UTI conforms only to `public.data`, because the markdown scene reads `public.plain-text` and would otherwise claim it too.
+
 ### Constraints to preserve
 
 - **2MB budget** (`expensivePassByteLimit`): documents over 2MB skip math and syntax highlighting to avoid OOM in Quick Look. Don't add expensive passes without respecting this gate.
 - **Live reload swaps `<body>` innerHTML** instead of reloading the page, to preserve scroll position. New rendering features that need JS init (like Mermaid) must re-run on body swap — see `WebView.swift`.
 - **FileWatcher re-arms after atomic saves**: editors delete/rename on save, so the watcher waits 250ms and re-opens the file descriptor.
-- **Document saves must stay synchronous on the main thread** (`DocumentView.performSave`): the watcher callback also runs on main and drops self-write echoes by comparing disk content to `savedText` — an off-main/async save reintroduces the race where our own write looks external and clobbers the edit buffer. The dirty-buffer guard (`sourceText != savedText` → watcher never touches the buffer) must survive any watcher rewrite. `MarkdownFile.fileWrapper` still throws on purpose; saving bypasses the document system.
+- **Document saves must stay synchronous on the main thread** (`DocumentModel.performSave`): the watcher callback also runs on main and drops self-write echoes by comparing disk content to `savedText` — an off-main/async save reintroduces the race where our own write looks external and clobbers the edit buffer. The dirty-buffer guard (`sourceText != savedText` → watcher never touches the buffer) must survive any watcher rewrite. `MarkdownFile.fileWrapper` still throws on purpose; saving bypasses the document system.
 - **`CFBundleTypeRole` must stay `Viewer`** even though the app edits: declaring `Editor` makes the `DocumentGroup(viewing:)` scene grow the real File > Save chain, whose ⌘S outranks ours and routes into NSDocument — always raising the "changed by another application" sheet, since NSDocument's snapshot is stale next to the direct-write autosave. Related: the Save command uses `CommandGroup(replacing: .saveItem)`, never `after:`.
 - **Mermaid is app-only** (JS in WKWebView); the QL extension renders without JavaScript, so JS-dependent features must degrade gracefully there.
-- WKWebView runs with JavaScript minimized — only the Mermaid init hook, the body-swap evaluation, and the full-width class toggle (`WebView.applyWidth`). Keep it that way.
+- The markdown WKWebView runs with JavaScript minimized — only the Mermaid init hook, the comment bridge (`CommentBridge.swift`: selection → anchor, highlights), the body-swap evaluation, and the full-width class toggle (`WebView.applyWidth`). Keep it that way. The diff review page is the one deliberate exception (`DiffBridge.swift` explains why each piece has to be in the page).
+- **Every `git` call sets `GIT_OPTIONAL_LOCKS=0`** (`GitRunner.run`). Without it `git diff` rewrites the index, which wakes `RepoWatcher` (an endless refresh loop) and contends for `index.lock` with an agent working in the same tree. `RepoWatcher` also ignores `.git/` and `.peekaboo/` for the same loop reason.
+- **`CommentStore` reloads from disk before every mutation.** `save()` rewrites the whole review file from memory and the watcher is debounced, so without the reload a comment made just after an agent's edit erases that edit. Likewise the app only rewrites `review.md` when something actually changed: every write invalidates the agent's last read of it.
+- **A re-saved document sidecar must be byte-identical** to what older builds wrote (`ReviewFile.serialize` emits the diff header and location keys only when present, and keeps `\/` escaping in `prefix`/`suffix`).

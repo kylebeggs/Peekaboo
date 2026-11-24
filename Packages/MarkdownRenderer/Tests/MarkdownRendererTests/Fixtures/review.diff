@@ -1,0 +1,70 @@
+diff --git a/empty-new.txt b/empty-new.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/gone.txt b/gone.txt
+deleted file mode 100644
+index b023018cabc396e7692c70bbf5784a93d3f738ab..0000000000000000000000000000000000000000
+--- a/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-bye
+diff --git a/has space.txt b/has space.txt
+index bd4269ff9d6818e647e89bacacf357bc8b8eb33c..0679b7a52e1e333970588e45e6a4972021ca8438 100644
+--- a/has space.txt	
++++ b/has space.txt	
+@@ -1 +1 @@
+-spaced
++spaced out
+diff --git a/image.bin b/image.bin
+index 7de3bb628e4f47ddc1146f6abf33b349badad793..a986525fc4b89ce11f0a876508aa468c75643571 100644
+Binary files a/image.bin and b/image.bin differ
+diff --git a/nonl.txt b/nonl.txt
+index 91896afc22181c71ddc2f6a39b0b887ecdf48aa4..febb53a79478d102a54c5d0d6dbb688b279346c9 100644
+--- a/nonl.txt
++++ b/nonl.txt
+@@ -1,2 +1,2 @@
+ alpha
+-beta
+\ No newline at end of file
++gamma
+\ No newline at end of file
+diff --git a/pure-old.txt b/pure-new.txt
+similarity index 100%
+rename from pure-old.txt
+rename to pure-new.txt
+diff --git a/renamed-old.txt b/renamed-new.txt
+similarity index 89%
+rename from renamed-old.txt
+rename to renamed-new.txt
+index c9e9e05f445e6b772f19fea1449759b7458a446e..7155914b3e2999c8b0588cbf18442cd9975fa0ce 100644
+--- a/renamed-old.txt
++++ b/renamed-new.txt
+@@ -2,7 +2,7 @@ one
+ two
+ three
+ four
+-five
++FIVE
+ six
+ seven
+ eight
+diff --git a/script.sh b/script.sh
+old mode 100644
+new mode 100755
+diff --git "a/tab\there.txt" "b/tab\there.txt"
+index 72e24eca8d673e856cecd06d146be65fb3ff1971..cb06b67863c52b4de1997c50e6006aa3edee7eb9 100644
+--- "a/tab\there.txt"
++++ "b/tab\there.txt"
+@@ -1 +1,2 @@
+ tabbed
++more
+diff --git a/tricky.txt b/tricky.txt
+index d4abc120a3554ae00c6678bba1d5eb6914624f8f..63f7524b7e178e0e663dc7d6c3ca9ea4c9c51f72 100644
+--- a/tricky.txt
++++ b/tricky.txt
+@@ -1,3 +1,4 @@
+ keep
+--- a/looks-like-header
++diff --git a/fake b/fake
++@@ -1,1 +1,1 @@
+ keep2
