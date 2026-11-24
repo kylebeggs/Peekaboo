@@ -61,6 +61,6 @@ struct PeekabooApp: App {
                 ReviewView(requestURL: requestURL)
             }
         }
-        .defaultSize(width: 1500, height: 1330)
+        .defaultSize(reviewWindowSize)
     }
 }

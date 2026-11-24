@@ -1,6 +1,12 @@
 import SwiftUI
 import MarkdownRenderer
 
+// The whole window frame, title bar included. Applied explicitly when the window
+// appears: AppKit sizes a new document window from the last one it showed and ignores
+// the scene's `defaultSize`, so a review would otherwise open at the markdown window's
+// narrower frame.
+let reviewWindowSize = NSSize(width: 2081, height: 1437)
+
 /// Window content for a repo review: the split diff on the left, the same comments
 /// sidebar documents use on the right.
 struct ReviewView: View {
@@ -61,7 +67,10 @@ struct ReviewView: View {
             .help(showComments ? "Hide comments" : "Show comments")
         }
         .focusedSceneValue(\.refreshReview, RefreshReviewAction { model.refresh() })
-        .background(WindowAccessor { window.value = $0 })
+        .background(WindowAccessor { resolved in
+            window.value = resolved
+            if let resolved { applyDefaultSize(to: resolved) }
+        })
         // Coming back to the window is the moment the reader wants current state; it
         // also picks up a base changed by re-running `peekaboo diff <base>`.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
@@ -74,6 +83,23 @@ struct ReviewView: View {
             if id != nil { showComments = true }
         }
         .task { model.start() }
+    }
+
+    /// Resizes about the top-left corner, shrinking to fit a smaller screen.
+    private func applyDefaultSize(to window: NSWindow) {
+        guard !window.styleMask.contains(.fullScreen) else { return }
+        var frame = window.frame
+        let top = frame.maxY
+        frame.size = reviewWindowSize
+        if let visible = window.screen?.visibleFrame {
+            frame.size.width = min(frame.size.width, visible.width)
+            frame.size.height = min(frame.size.height, visible.height)
+            frame.origin.x = min(max(frame.origin.x, visible.minX), visible.maxX - frame.size.width)
+            frame.origin.y = min(max(top - frame.size.height, visible.minY), visible.maxY - frame.size.height)
+        } else {
+            frame.origin.y = top - frame.size.height
+        }
+        window.setFrame(frame, display: true)
     }
 
     @ViewBuilder private var content: some View {
