@@ -111,6 +111,20 @@ enum DiffBridge {
         post({ type: 'comment', id: file.id, side: sideOf(first), start: Math.min(a, b), end: Math.max(a, b) });
       }
 
+      // The part of a range that lies inside one cell.
+      function clipTo(range, cell) {
+        var probe = document.createRange();
+        probe.selectNodeContents(cell);
+        var clipped = range.cloneRange();
+        if (clipped.compareBoundaryPoints(Range.START_TO_START, probe) < 0) {
+          clipped.setStart(probe.startContainer, probe.startOffset);
+        }
+        if (clipped.compareBoundaryPoints(Range.END_TO_END, probe) > 0) {
+          clipped.setEnd(probe.endContainer, probe.endOffset);
+        }
+        return clipped;
+      }
+
       // The code cells a selection covers, on the side it was started on, within one file.
       function selectedCells() {
         var selection = window.getSelection();
@@ -123,22 +137,13 @@ enum DiffBridge {
         var own = root.closest('td.c');
         var candidates = own ? [own] : root.querySelectorAll('td.c.' + side + ':not(.nil)');
         var cells = [];
-        var probe = document.createRange();
         for (var i = 0; i < candidates.length; i++) {
           if (own) { cells.push(candidates[i]); break; }
           if (!range.intersectsNode(candidates[i])) { continue; }
           // A cell counts only if some of its text is selected: a selection that
           // merely ends at the start of the next line (triple-click does this) must
           // not claim that line. Clip the selection to the cell and look at what is left.
-          probe.selectNodeContents(candidates[i]);
-          var clipped = range.cloneRange();
-          if (clipped.compareBoundaryPoints(Range.START_TO_START, probe) < 0) {
-            clipped.setStart(probe.startContainer, probe.startOffset);
-          }
-          if (clipped.compareBoundaryPoints(Range.END_TO_END, probe) > 0) {
-            clipped.setEnd(probe.endContainer, probe.endOffset);
-          }
-          if (clipped.toString().length > 0) { cells.push(candidates[i]); }
+          if (clipTo(range, candidates[i]).toString().length > 0) { cells.push(candidates[i]); }
         }
         if (!cells.length) { return null; }
         var file = fileOf(cells[0]);
@@ -170,9 +175,13 @@ enum DiffBridge {
         if (el) { el.style.display = 'none'; }
       }
       function showFab() {
-        if (!selectedCells()) { hideFab(); return; }
-        var rect = window.getSelection().getRangeAt(0).getBoundingClientRect();
-        if (!rect || (rect.width === 0 && rect.height === 0)) { hideFab(); return; }
+        var cells = selectedCells();
+        if (!cells) { hideFab(); return; }
+        // Anchor to the selected text on the first line only. The whole range's box
+        // spans every row it crosses, gutters and the other side included, so its
+        // left edge is the table's.
+        var rect = clipTo(window.getSelection().getRangeAt(0), cells.first).getBoundingClientRect();
+        if (!rect || (rect.width === 0 && rect.height === 0)) { rect = cells.first.getBoundingClientRect(); }
         var el = fab();
         el.style.display = 'block';
         el.style.top = Math.max(0, window.scrollY + rect.top - 34) + 'px';
